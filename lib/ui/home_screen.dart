@@ -8,6 +8,7 @@ import '../game/game_state.dart';
 import 'board.dart';
 import 'keyboard.dart';
 import 'share.dart';
+import 'theme.dart';
 import 'tip_card.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -86,6 +87,7 @@ class _PlayViewState extends ConsumerState<_PlayView> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(gameControllerProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     ref.listen<GameState>(gameControllerProvider, (prev, next) {
       if (next.message != null && next.message != prev?.message) {
@@ -125,6 +127,12 @@ class _PlayViewState extends ConsumerState<_PlayView> {
                 onPressed: _share,
                 icon: const Icon(Icons.share_outlined),
               ),
+            IconButton(
+              tooltip: tooltipForThemeMode(themeMode),
+              onPressed: () =>
+                  ref.read(themeModeProvider.notifier).cycle(),
+              icon: Icon(iconForThemeMode(themeMode)),
+            ),
             IconButton(
               tooltip: 'Πληροφορίες',
               onPressed: () => _showHelp(context, state.dayIndex),
