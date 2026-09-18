@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +12,7 @@ import 'keyboard.dart';
 import 'share.dart';
 import 'theme.dart';
 import 'tip_card.dart';
+import 'win_confetti.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -39,6 +42,12 @@ class _PlayView extends ConsumerStatefulWidget {
 
 class _PlayViewState extends ConsumerState<_PlayView> {
   final _focus = FocusNode();
+  bool _confettiPlaying = false;
+  bool _shareVisible = false;
+  Timer? _shareDelayTimer;
+  bool _handledInitialFinish = false;
+
+  static const _shareAfterTipDelay = Duration(milliseconds: 400);
 
   @override
   void initState() {
@@ -50,6 +59,7 @@ class _PlayViewState extends ConsumerState<_PlayView> {
 
   @override
   void dispose() {
+    _shareDelayTimer?.cancel();
     _focus.dispose();
     super.dispose();
   }
@@ -84,10 +94,53 @@ class _PlayViewState extends ConsumerState<_PlayView> {
     );
   }
 
+  void _scheduleShareVisible({required bool afterTip}) {
+    _shareDelayTimer?.cancel();
+    if (!afterTip) {
+      setState(() => _shareVisible = true);
+      return;
+    }
+    // Tip is shown immediately in the tree; enable Share 400ms after that.
+    _shareDelayTimer = Timer(_shareAfterTipDelay, () {
+      if (!mounted) return;
+      setState(() => _shareVisible = true);
+    });
+  }
+
+  void _onWon({required bool celebrate}) {
+    if (celebrate) {
+      // Soft haptic (no-ops on unsupported platforms / web — fine).
+      HapticFeedback.lightImpact();
+      setState(() {
+        _confettiPlaying = true;
+        _shareVisible = false;
+      });
+      // Confetti self-ends at 1.2s; clear flag so a later win can retrigger.
+      Future<void>.delayed(const Duration(milliseconds: 1200), () {
+        if (mounted) setState(() => _confettiPlaying = false);
+      });
+    }
+    _scheduleShareVisible(afterTip: true);
+  }
+
+  void _syncFinishFromState(GameState state) {
+    if (_handledInitialFinish) return;
+    _handledInitialFinish = true;
+    if (state.status == GameStatus.won) {
+      // Restored win: tip already in tree — delay Share, skip confetti/haptic.
+      _scheduleShareVisible(afterTip: true);
+    } else if (state.status == GameStatus.lost) {
+      // Field assign only — may run during build on first frame.
+      _shareVisible = true;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(gameControllerProvider);
     final themeMode = ref.watch(themeModeProvider);
+
+    _syncFinishFromState(state);
 
     ref.listen<GameState>(gameControllerProvider, (prev, next) {
       if (next.message != null && next.message != prev?.message) {
@@ -99,7 +152,25 @@ class _PlayViewState extends ConsumerState<_PlayView> {
         );
         ref.read(gameControllerProvider.notifier).clearMessage();
       }
+
+      final justWon =
+          next.status == GameStatus.won && prev?.status != GameStatus.won;
+      final justLost =
+          next.status == GameStatus.lost && prev?.status != GameStatus.lost;
+
+      if (justWon) {
+        _onWon(celebrate: true);
+      } else if (justLost) {
+        _shareDelayTimer?.cancel();
+        setState(() => _shareVisible = true);
+      }
     });
+
+    final showTip = state.status == GameStatus.won &&
+        state.etymologyTip != null &&
+        state.etymologyTip!.isNotEmpty;
+
+    final showShare = state.isFinished && _shareVisible;
 
     return KeyboardListener(
       focusNode: _focus,
@@ -121,7 +192,7 @@ class _PlayViewState extends ConsumerState<_PlayView> {
                 ),
               ),
             ),
-            if (state.isFinished)
+            if (showShare)
               IconButton(
                 tooltip: 'Κοινοποίηση',
                 onPressed: _share,
@@ -140,49 +211,54 @@ class _PlayViewState extends ConsumerState<_PlayView> {
             ),
           ],
         ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Ημερήσιο #${state.dayIndex + 1}',
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ),
-              if (state.status == GameStatus.won &&
-                  state.etymologyTip != null &&
-                  state.etymologyTip!.isNotEmpty)
-                TipCard(tip: state.etymologyTip!),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  child: GameBoard(rows: state.rows),
-                ),
-              ),
-              if (state.isFinished)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: FilledButton.tonalIcon(
-                    onPressed: _share,
-                    icon: const Icon(Icons.copy_all_outlined),
-                    label: Text(
-                      state.status == GameStatus.won
-                          ? 'Κοινοποίηση αποτελέσματος'
-                          : 'Κοινοποίηση · λέξη: ${state.answer}',
+        body: Stack(
+          children: [
+            SafeArea(
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Ημερήσιο #${state.dayIndex + 1}',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ),
-                ),
-              GameKeyboard(
-                keyStates: state.keyStates,
-                onKey: (k) =>
-                    ref.read(gameControllerProvider.notifier).onKey(k),
+                  if (showTip) TipCard(tip: state.etymologyTip!),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: GameBoard(rows: state.rows),
+                    ),
+                  ),
+                  if (showShare)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: FilledButton.tonalIcon(
+                        onPressed: _share,
+                        icon: const Icon(Icons.copy_all_outlined),
+                        label: Text(
+                          state.status == GameStatus.won
+                              ? 'Κοινοποίηση αποτελέσματος'
+                              : 'Κοινοποίηση · λέξη: ${state.answer}',
+                        ),
+                      ),
+                    ),
+                  GameKeyboard(
+                    keyStates: state.keyStates,
+                    onKey: (k) =>
+                        ref.read(gameControllerProvider.notifier).onKey(k),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
-              const SizedBox(height: 8),
-            ],
-          ),
+            ),
+            Positioned.fill(
+              child: WinConfetti(playing: _confettiPlaying),
+            ),
+          ],
         ),
       ),
     );
