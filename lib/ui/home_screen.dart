@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/normalize.dart';
+import '../data/hive_boxes.dart';
+import '../data/pack_meta.dart';
 import '../game/game_controller.dart';
 import '../game/game_state.dart';
 import 'board.dart';
@@ -14,12 +16,20 @@ import 'theme.dart';
 import 'tip_card.dart';
 import 'win_confetti.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
     final dictAsync = ref.watch(dictProvider);
+    final packsAsync = ref.watch(packsCatalogProvider);
+    final themeMode = ref.watch(themeModeProvider);
+    final mainStreak = HiveBoxes.streakFor(null);
 
     return dictAsync.when(
       loading: () => const Scaffold(
@@ -28,19 +38,188 @@ class HomeScreen extends ConsumerWidget {
       error: (e, _) => Scaffold(
         body: Center(child: Text('Σφάλμα φόρτωσης: $e')),
       ),
-      data: (_) => const _PlayView(),
+      data: (_) => Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            'Λεξήμερα',
+            style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5),
+          ),
+          actions: [
+            IconButton(
+              tooltip: tooltipForThemeMode(themeMode),
+              onPressed: () => ref.read(themeModeProvider.notifier).cycle(),
+              icon: Icon(iconForThemeMode(themeMode)),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            children: [
+              Card(
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => _openPlay(context, packId: ''),
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor:
+                              Theme.of(context).colorScheme.primaryContainer,
+                          child: Text(
+                            'Λ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Η λέξη της ημέρας',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '🔥 Σερί $mainStreak · πάτα για παιχνίδι',
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Text(
+                'Πακέτα',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Θεματικές λέξεις · ξεχωριστό ημερήσιο · δεν επηρεάζει το κύριο σερί',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 12),
+              packsAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (e, _) => Text('Σφάλμα πακέτων: $e'),
+                data: (packs) {
+                  if (packs.isEmpty) {
+                    return const Text('Δεν υπάρχουν πακέτα ακόμα.');
+                  }
+                  return Column(
+                    children: [
+                      for (final pack in packs)
+                        _PackCard(
+                          pack: pack,
+                          onTap: () => _openPlay(context, packId: pack.id),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPlay(BuildContext context, {required String packId}) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PlayScreen(packId: packId),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+}
+
+class _PackCard extends StatelessWidget {
+  const _PackCard({required this.pack, required this.onTap});
+
+  final PackMeta pack;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final packStreak = HiveBoxes.streakFor(pack.id);
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            children: [
+              Text(pack.emoji, style: const TextStyle(fontSize: 28)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pack.titleEl,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${pack.answerCount} λέξεις'
+                      '${packStreak > 0 ? ' · 🔥 $packStreak' : ''}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
-class _PlayView extends ConsumerStatefulWidget {
-  const _PlayView();
+/// Play board for main daily (`packId == ''`) or a thematic pack.
+class PlayScreen extends ConsumerStatefulWidget {
+  const PlayScreen({super.key, required this.packId});
+
+  final String packId;
 
   @override
-  ConsumerState<_PlayView> createState() => _PlayViewState();
+  ConsumerState<PlayScreen> createState() => _PlayScreenState();
 }
 
-class _PlayViewState extends ConsumerState<_PlayView> {
+class _PlayScreenState extends ConsumerState<PlayScreen> {
   final _focus = FocusNode();
   bool _confettiPlaying = false;
   bool _shareVisible = false;
@@ -48,6 +227,8 @@ class _PlayViewState extends ConsumerState<_PlayView> {
   bool _handledInitialFinish = false;
 
   static const _shareAfterTipDelay = Duration(milliseconds: 400);
+
+  String get _scope => widget.packId;
 
   @override
   void initState() {
@@ -66,7 +247,7 @@ class _PlayViewState extends ConsumerState<_PlayView> {
 
   void _onHardwareKey(KeyEvent event) {
     if (event is! KeyDownEvent) return;
-    final ctrl = ref.read(gameControllerProvider.notifier);
+    final ctrl = ref.read(gameControllerProvider(_scope).notifier);
 
     if (event.logicalKey == LogicalKeyboardKey.enter) {
       ctrl.onKey('ENTER');
@@ -79,14 +260,13 @@ class _PlayViewState extends ConsumerState<_PlayView> {
 
     final ch = event.character;
     if (ch == null || ch.isEmpty) return;
-    // Accept Greek (and composed) letters; ignore latin/digits
     final probe = normalizeGreekWord('$chαααα'.substring(0, 5));
     if (probe == null) return;
     ctrl.onKey(probe[0]);
   }
 
   Future<void> _share() async {
-    final state = ref.read(gameControllerProvider);
+    final state = ref.read(gameControllerProvider(_scope));
     await copyShareText(state);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -100,7 +280,6 @@ class _PlayViewState extends ConsumerState<_PlayView> {
       setState(() => _shareVisible = true);
       return;
     }
-    // Tip is shown immediately in the tree; enable Share 400ms after that.
     _shareDelayTimer = Timer(_shareAfterTipDelay, () {
       if (!mounted) return;
       setState(() => _shareVisible = true);
@@ -109,13 +288,11 @@ class _PlayViewState extends ConsumerState<_PlayView> {
 
   void _onWon({required bool celebrate}) {
     if (celebrate) {
-      // Soft haptic (no-ops on unsupported platforms / web — fine).
       HapticFeedback.lightImpact();
       setState(() {
         _confettiPlaying = true;
         _shareVisible = false;
       });
-      // Confetti self-ends at 1.2s; clear flag so a later win can retrigger.
       Future<void>.delayed(const Duration(milliseconds: 1200), () {
         if (mounted) setState(() => _confettiPlaying = false);
       });
@@ -127,22 +304,21 @@ class _PlayViewState extends ConsumerState<_PlayView> {
     if (_handledInitialFinish) return;
     _handledInitialFinish = true;
     if (state.status == GameStatus.won) {
-      // Restored win: tip already in tree — delay Share, skip confetti/haptic.
       _scheduleShareVisible(afterTip: true);
     } else if (state.status == GameStatus.lost) {
-      // Field assign only — may run during build on first frame.
       _shareVisible = true;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(gameControllerProvider);
+    final state = ref.watch(gameControllerProvider(_scope));
     final themeMode = ref.watch(themeModeProvider);
+    final isPack = widget.packId.isNotEmpty;
 
     _syncFinishFromState(state);
 
-    ref.listen<GameState>(gameControllerProvider, (prev, next) {
+    ref.listen<GameState>(gameControllerProvider(_scope), (prev, next) {
       if (next.message != null && next.message != prev?.message) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -150,7 +326,7 @@ class _PlayViewState extends ConsumerState<_PlayView> {
             duration: const Duration(seconds: 2),
           ),
         );
-        ref.read(gameControllerProvider.notifier).clearMessage();
+        ref.read(gameControllerProvider(_scope).notifier).clearMessage();
       }
 
       final justWon =
@@ -172,15 +348,23 @@ class _PlayViewState extends ConsumerState<_PlayView> {
 
     final showShare = state.isFinished && _shareVisible;
 
+    final title = isPack
+        ? (state.packLabel ?? 'Πακέτο')
+        : 'Λεξήμερα';
+
+    final subtitle = isPack
+        ? 'Πακέτο #${state.dayIndex + 1}'
+        : 'Ημερήσιο #${state.dayIndex + 1}';
+
     return KeyboardListener(
       focusNode: _focus,
       autofocus: true,
       onKeyEvent: _onHardwareKey,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text(
-            'Λεξήμερα',
-            style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5),
           ),
           actions: [
             Padding(
@@ -200,71 +384,76 @@ class _PlayViewState extends ConsumerState<_PlayView> {
               ),
             IconButton(
               tooltip: tooltipForThemeMode(themeMode),
-              onPressed: () =>
-                  ref.read(themeModeProvider.notifier).cycle(),
+              onPressed: () => ref.read(themeModeProvider.notifier).cycle(),
               icon: Icon(iconForThemeMode(themeMode)),
             ),
             IconButton(
               tooltip: 'Πληροφορίες',
-              onPressed: () => _showHelp(context, state.dayIndex),
+              onPressed: () => _showHelp(context, state),
               icon: const Icon(Icons.help_outline),
             ),
           ],
         ),
-        body: Stack(
-          children: [
-            SafeArea(
-              child: Column(
+        body: state.status == GameStatus.loading
+            ? const Center(child: CircularProgressIndicator())
+            : Stack(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      'Ημερήσιο #${state.dayIndex + 1}',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
+                  SafeArea(
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            subtitle,
+                            style:
+                                Theme.of(context).textTheme.labelLarge?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
                           ),
-                    ),
-                  ),
-                  if (showTip) TipCard(tip: state.etymologyTip!),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: GameBoard(rows: state.rows),
-                    ),
-                  ),
-                  if (showShare)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: FilledButton.tonalIcon(
-                        onPressed: _share,
-                        icon: const Icon(Icons.copy_all_outlined),
-                        label: Text(
-                          state.status == GameStatus.won
-                              ? 'Κοινοποίηση αποτελέσματος'
-                              : 'Κοινοποίηση · λέξη: ${state.answer}',
                         ),
-                      ),
+                        if (showTip) TipCard(tip: state.etymologyTip!),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                            child: GameBoard(rows: state.rows),
+                          ),
+                        ),
+                        if (showShare)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: FilledButton.tonalIcon(
+                              onPressed: _share,
+                              icon: const Icon(Icons.copy_all_outlined),
+                              label: Text(
+                                state.status == GameStatus.won
+                                    ? 'Κοινοποίηση αποτελέσματος'
+                                    : 'Κοινοποίηση · λέξη: ${state.answer}',
+                              ),
+                            ),
+                          ),
+                        GameKeyboard(
+                          keyStates: state.keyStates,
+                          onKey: (k) => ref
+                              .read(gameControllerProvider(_scope).notifier)
+                              .onKey(k),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
                     ),
-                  GameKeyboard(
-                    keyStates: state.keyStates,
-                    onKey: (k) =>
-                        ref.read(gameControllerProvider.notifier).onKey(k),
                   ),
-                  const SizedBox(height: 8),
+                  Positioned.fill(
+                    child: WinConfetti(playing: _confettiPlaying),
+                  ),
                 ],
               ),
-            ),
-            Positioned.fill(
-              child: WinConfetti(playing: _confettiPlaying),
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  void _showHelp(BuildContext context, int dayIndex) {
+  void _showHelp(BuildContext context, GameState state) {
+    final isPack = state.isPack;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -280,15 +469,26 @@ class _PlayViewState extends ConsumerState<_PlayView> {
                 style: Theme.of(ctx).textTheme.titleLarge,
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Μάντεψε τη λέξη της ημέρας σε 6 προσπάθειες.\n'
-                'Πράσινο = σωστό γράμμα στη σωστή θέση.\n'
-                'Κίτρινο = υπάρχει στη λέξη, άλλη θέση.\n'
-                'Γκρι = δεν υπάρχει στη λέξη.\n\n'
-                'Νέα λέξη κάθε μέρα (UTC).',
+              Text(
+                isPack
+                    ? 'Μάντεψε τη λέξη του πακέτου σε 6 προσπάθειες.\n'
+                        'Πράσινο = σωστό γράμμα στη σωστή θέση.\n'
+                        'Κίτρινο = υπάρχει στη λέξη, άλλη θέση.\n'
+                        'Γκρι = δεν υπάρχει στη λέξη.\n\n'
+                        'Νέα λέξη κάθε μέρα από τη λίστα του πακέτου (UTC).\n'
+                        'Το σερί του πακέτου είναι ξεχωριστό από το κύριο.'
+                    : 'Μάντεψε τη λέξη της ημέρας σε 6 προσπάθειες.\n'
+                        'Πράσινο = σωστό γράμμα στη σωστή θέση.\n'
+                        'Κίτρινο = υπάρχει στη λέξη, άλλη θέση.\n'
+                        'Γκρι = δεν υπάρχει στη λέξη.\n\n'
+                        'Νέα λέξη κάθε μέρα (UTC).',
               ),
               const SizedBox(height: 8),
-              Text('Σημερινό παζλ: #${dayIndex + 1}'),
+              Text(
+                isPack
+                    ? 'Σημερινό παζλ πακέτου: #${state.dayIndex + 1}'
+                    : 'Σημερινό παζλ: #${state.dayIndex + 1}',
+              ),
             ],
           ),
         );

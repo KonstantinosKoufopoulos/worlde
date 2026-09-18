@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/normalize.dart';
 import '../data/dict_repository.dart';
 import '../data/hive_boxes.dart';
+import '../data/pack_meta.dart';
+import '../data/word_dict.dart';
 import 'game_state.dart';
 
 final dictProvider = FutureProvider<DictRepository>((ref) async {
@@ -11,22 +13,51 @@ final dictProvider = FutureProvider<DictRepository>((ref) async {
   return repo;
 });
 
-final gameControllerProvider =
-    StateNotifierProvider<GameController, GameState>((ref) {
-  final dict = ref.watch(dictProvider).valueOrNull;
-  if (dict == null) {
-    return GameController.loading();
+final packsCatalogProvider = FutureProvider<List<PackMeta>>((ref) async {
+  final repo = await ref.watch(dictProvider.future);
+  return repo.loadCatalog();
+});
+
+/// Loads main (`''`) or pack word list + optional pack label.
+final wordDictProvider =
+    FutureProvider.family<({WordDict words, String? packLabel}), String>(
+        (ref, packId) async {
+  final repo = await ref.watch(dictProvider.future);
+  if (packId.isEmpty) {
+    return (words: repo.main, packLabel: null);
   }
-  return GameController(dict);
+  final words = await repo.loadPack(packId);
+  final meta = await repo.loadPackMeta(packId);
+  return (words: words, packLabel: meta.label);
+});
+
+/// Family key: empty string = main daily; otherwise pack id.
+final gameControllerProvider =
+    StateNotifierProvider.family<GameController, GameState, String>(
+        (ref, packId) {
+  final loaded = ref.watch(wordDictProvider(packId)).valueOrNull;
+  if (loaded == null) {
+    return GameController.loading(packId: packId.isEmpty ? null : packId);
+  }
+  return GameController(
+    loaded.words,
+    packId: packId.isEmpty ? null : packId,
+    packLabel: loaded.packLabel,
+  );
 });
 
 class GameController extends StateNotifier<GameState> {
-  GameController(DictRepository dict)
-      : _dict = dict,
-        super(_buildInitial(dict));
+  GameController(
+    WordDict words, {
+    String? packId,
+    String? packLabel,
+  })  : _words = words,
+        _packId = packId,
+        super(_buildInitial(words, packId: packId, packLabel: packLabel));
 
-  GameController.loading()
-      : _dict = null,
+  GameController.loading({String? packId})
+      : _words = null,
+        _packId = packId,
         super(
           GameState(
             dayIndex: 0,
@@ -40,28 +71,41 @@ class GameController extends StateNotifier<GameState> {
             status: GameStatus.loading,
             streak: 0,
             keyStates: const {},
+            packId: packId,
           ),
         );
 
-  final DictRepository? _dict;
+  final WordDict? _words;
+  final String? _packId;
 
-  static GameState _buildInitial(DictRepository dict) {
+  static GameState _buildInitial(
+    WordDict words, {
+    String? packId,
+    String? packLabel,
+  }) {
     final day = DictRepository.dayIndex();
-    final answer = dict.answerForDay(day);
-    final tip = dict.tipFor(answer);
+    final answer = words.answerForDay(day);
+    final tip = words.tipFor(answer);
+    final streak = HiveBoxes.streakFor(packId);
 
-    // Restore in-progress / finished board for today
-    final savedDay = HiveBoxes.settings.get(HiveBoxes.keySavedDayIndex) as int?;
-    final streak = HiveBoxes.streak;
+    final savedDay =
+        HiveBoxes.getScoped(packId, HiveBoxes.keySavedDayIndex) as int?;
 
     if (savedDay == day) {
-      final restored = _restore(dict, day, answer, streak, tip);
+      final restored = _restore(
+        day,
+        answer,
+        streak,
+        tip,
+        packId: packId,
+        packLabel: packLabel,
+      );
       if (restored != null) return restored;
     } else {
-      // New day — clear board persistence
-      HiveBoxes.settings.delete(HiveBoxes.keyBoardRows);
-      HiveBoxes.settings.delete(HiveBoxes.keyGameStatus);
-      HiveBoxes.settings.put(HiveBoxes.keySavedDayIndex, day);
+      // New day — clear board persistence for this scope only
+      HiveBoxes.deleteScoped(packId, HiveBoxes.keyBoardRows);
+      HiveBoxes.deleteScoped(packId, HiveBoxes.keyGameStatus);
+      HiveBoxes.putScoped(packId, HiveBoxes.keySavedDayIndex, day);
     }
 
     return GameState.initial(
@@ -69,24 +113,29 @@ class GameController extends StateNotifier<GameState> {
       answer: answer,
       streak: streak,
       etymologyTip: tip,
+      packId: packId,
+      packLabel: packLabel,
     );
   }
 
   static GameState? _restore(
-    DictRepository dict,
     int day,
     String answer,
     int streak,
-    String? tip,
-  ) {
-    final raw = HiveBoxes.settings.get(HiveBoxes.keyBoardRows);
+    String? tip, {
+    String? packId,
+    String? packLabel,
+  }) {
+    final raw = HiveBoxes.getScoped(packId, HiveBoxes.keyBoardRows);
     if (raw is! List) return null;
     final guesses = raw.cast<dynamic>().map((e) => e.toString()).toList();
 
-    var statusName =
-        HiveBoxes.settings.get(HiveBoxes.keyGameStatus, defaultValue: 'playing')
-            as String;
-    var status = GameStatus.values.firstWhere(
+    final statusName = HiveBoxes.getScoped(
+          packId,
+          HiveBoxes.keyGameStatus,
+        ) as String? ??
+        'playing';
+    final status = GameStatus.values.firstWhere(
       (s) => s.name == statusName,
       orElse: () => GameStatus.playing,
     );
@@ -117,6 +166,8 @@ class GameController extends StateNotifier<GameState> {
       streak: streak,
       keyStates: keyStates,
       etymologyTip: tip,
+      packId: packId,
+      packLabel: packLabel,
     );
   }
 
@@ -146,7 +197,7 @@ class GameController extends StateNotifier<GameState> {
   }
 
   void onKey(String raw) {
-    if (_dict == null) return;
+    if (_words == null) return;
     if (state.status != GameStatus.playing) return;
 
     if (raw == 'ENTER') {
@@ -155,14 +206,14 @@ class GameController extends StateNotifier<GameState> {
     }
     if (raw == 'BACK') {
       if (state.currentGuess.isEmpty) return;
-      final next = state.currentGuess.substring(0, state.currentGuess.length - 1);
+      final next =
+          state.currentGuess.substring(0, state.currentGuess.length - 1);
       state = _withGuess(next).copyWith(clearMessage: true);
       return;
     }
 
     if (state.currentGuess.length >= GameState.wordLen) return;
 
-    // Single letter: normalize by padding — better path:
     final letter = _singleLetter(raw);
     if (letter == null) return;
 
@@ -193,15 +244,15 @@ class GameController extends StateNotifier<GameState> {
   }
 
   void _submit() {
-    final dict = _dict;
-    if (dict == null) return;
+    final words = _words;
+    if (words == null) return;
     if (state.currentGuess.length != GameState.wordLen) {
       state = state.copyWith(message: 'Χρειάζονται 5 γράμματα');
       return;
     }
 
     final key = normalizeGreekWord(state.currentGuess) ?? state.currentGuess;
-    if (!dict.isValidGuess(key)) {
+    if (!words.isValidGuess(key)) {
       state = state.copyWith(message: 'Η λέξη δεν υπάρχει στη λίστα');
       return;
     }
@@ -232,9 +283,9 @@ class GameController extends StateNotifier<GameState> {
       streak = 0;
     }
 
-    HiveBoxes.settings.put(HiveBoxes.keyBoardRows, submitted);
-    HiveBoxes.settings.put(HiveBoxes.keyGameStatus, status.name);
-    HiveBoxes.settings.put(HiveBoxes.keySavedDayIndex, state.dayIndex);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyBoardRows, submitted);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyGameStatus, status.name);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keySavedDayIndex, state.dayIndex);
 
     state = state.copyWith(
       rows: rows,
@@ -251,32 +302,33 @@ class GameController extends StateNotifier<GameState> {
   }
 
   List<String> _persistedGuesses() {
-    final raw = HiveBoxes.settings.get(HiveBoxes.keyBoardRows);
-    if (raw is List) return raw.cast<dynamic>().map((e) => e.toString()).toList();
+    final raw = HiveBoxes.getScoped(_packId, HiveBoxes.keyBoardRows);
+    if (raw is List) {
+      return raw.cast<dynamic>().map((e) => e.toString()).toList();
+    }
     return [];
   }
 
   int _updateStreakOnWin() {
     final day = state.dayIndex;
-    final last = HiveBoxes.lastPlayedDay;
-    int next;
+    final last = HiveBoxes.lastPlayedDayFor(_packId);
+    final int next;
     if (last == null) {
       next = 1;
     } else if (last == day) {
-      // Already counted today
-      next = HiveBoxes.streak;
+      next = HiveBoxes.streakFor(_packId);
     } else if (last == day - 1) {
-      next = HiveBoxes.streak + 1;
+      next = HiveBoxes.streakFor(_packId) + 1;
     } else {
       next = 1;
     }
-    HiveBoxes.streak = next;
-    HiveBoxes.lastPlayedDay = day;
+    HiveBoxes.setStreakFor(_packId, next);
+    HiveBoxes.setLastPlayedDayFor(_packId, day);
     return next;
   }
 
   void _updateStreakOnLoss() {
-    HiveBoxes.streak = 0;
-    HiveBoxes.lastPlayedDay = state.dayIndex;
+    HiveBoxes.setStreakFor(_packId, 0);
+    HiveBoxes.setLastPlayedDayFor(_packId, state.dayIndex);
   }
 }

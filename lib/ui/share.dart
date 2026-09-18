@@ -9,7 +9,11 @@ String buildShareText(GameState state) {
       : 'X/6';
 
   final buf = StringBuffer();
-  buf.writeln('Λεξήμερα #$n $score');
+  if (state.isPack && state.packLabel != null) {
+    buf.writeln('Λεξήμερα · ${state.packLabel} #$n $score');
+  } else {
+    buf.writeln('Λεξήμερα #$n $score');
+  }
   buf.writeln();
 
   final submitted = state.status == GameStatus.won

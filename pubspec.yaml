@@ -25,3 +25,7 @@ flutter:
     - assets/dict/answers.json
     - assets/dict/guesses.json
     - assets/dict/etymology.json
+    - assets/dict/packs/mythology/answers.json
+    - assets/dict/packs/mythology/guesses.json
+    - assets/dict/packs/mythology/etymology.json
+    - assets/dict/packs/mythology/meta.json

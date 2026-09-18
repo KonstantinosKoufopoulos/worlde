@@ -2,29 +2,72 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 
+import 'pack_meta.dart';
+import 'word_dict.dart';
+
 class DictRepository {
   DictRepository._();
   static final DictRepository instance = DictRepository._();
 
-  List<String> answers = const [];
-  Set<String> guesses = const {};
-  Map<String, String> etymology = const {};
+  /// Shipped thematic packs (assets under assets/dict/packs/{id}/).
+  static const catalogPackIds = ['mythology'];
 
-  bool get isLoaded => answers.isNotEmpty;
+  WordDict? _main;
+  final Map<String, WordDict> _packs = {};
+  final Map<String, PackMeta> _metas = {};
+
+  WordDict get main {
+    final m = _main;
+    if (m == null) throw StateError('Dictionary not loaded');
+    return m;
+  }
+
+  bool get isLoaded => _main != null && !_main!.isEmpty;
+
+  /// Back-compat accessors used by older call sites.
+  List<String> get answers => main.answers;
+  Set<String> get guesses => main.guesses;
+  Map<String, String> get etymology => main.etymology;
 
   Future<void> load() async {
-    final answersRaw =
-        await rootBundle.loadString('assets/dict/answers.json');
-    final guessesRaw =
-        await rootBundle.loadString('assets/dict/guesses.json');
-    final etyRaw =
-        await rootBundle.loadString('assets/dict/etymology.json');
+    if (_main != null) return;
+    _main = await _loadWordDict('assets/dict');
+  }
 
-    answers = (jsonDecode(answersRaw) as List).cast<String>();
-    guesses = (jsonDecode(guessesRaw) as List).cast<String>().toSet();
-    etymology = (jsonDecode(etyRaw) as Map).map(
-      (k, v) => MapEntry(k.toString(), v.toString()),
-    );
+  Future<List<PackMeta>> loadCatalog() async {
+    final out = <PackMeta>[];
+    for (final id in catalogPackIds) {
+      out.add(await loadPackMeta(id));
+    }
+    return out;
+  }
+
+  Future<PackMeta> loadPackMeta(String packId) async {
+    final cached = _metas[packId];
+    if (cached != null) return cached;
+    final raw =
+        await rootBundle.loadString('assets/dict/packs/$packId/meta.json');
+    final meta = PackMeta.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+    _metas[packId] = meta;
+    return meta;
+  }
+
+  Future<WordDict> loadPack(String packId) async {
+    final cached = _packs[packId];
+    if (cached != null) return cached;
+    final dict = await _loadWordDict('assets/dict/packs/$packId');
+    _packs[packId] = dict;
+    await loadPackMeta(packId);
+    return dict;
+  }
+
+  WordDict dictFor({String? packId}) {
+    if (packId == null || packId.isEmpty) return main;
+    final pack = _packs[packId];
+    if (pack == null) {
+      throw StateError('Pack "$packId" not loaded');
+    }
+    return pack;
   }
 
   /// UTC days since 2026-01-01.
@@ -34,21 +77,26 @@ class DictRepository {
     return utc.difference(epoch).inDays;
   }
 
-  String answerForDay(int dayIndex) {
-    if (answers.isEmpty) {
-      throw StateError('Dictionary not loaded');
-    }
-    final idx = dayIndex % answers.length;
-    // Dart % can be negative; normalize
-    final safe = idx < 0 ? idx + answers.length : idx;
-    return answers[safe];
-  }
+  String answerForDay(int dayIndex) => main.answerForDay(dayIndex);
 
-  bool isValidGuess(String matchKey) => guesses.contains(matchKey);
+  bool isValidGuess(String matchKey) => main.isValidGuess(matchKey);
 
-  String? tipFor(String answer) {
-    final tip = etymology[answer];
-    if (tip == null || tip.trim().isEmpty) return null;
-    return tip.trim();
+  String? tipFor(String answer) => main.tipFor(answer);
+
+  static Future<WordDict> _loadWordDict(String assetDir) async {
+    final answersRaw =
+        await rootBundle.loadString('$assetDir/answers.json');
+    final guessesRaw =
+        await rootBundle.loadString('$assetDir/guesses.json');
+    final etyRaw =
+        await rootBundle.loadString('$assetDir/etymology.json');
+
+    return WordDict(
+      answers: (jsonDecode(answersRaw) as List).cast<String>(),
+      guesses: (jsonDecode(guessesRaw) as List).cast<String>().toSet(),
+      etymology: (jsonDecode(etyRaw) as Map).map(
+        (k, v) => MapEntry(k.toString(), v.toString()),
+      ),
+    );
   }
 }

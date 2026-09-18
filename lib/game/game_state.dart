@@ -26,6 +26,8 @@ class GameState {
     required this.keyStates,
     this.message,
     this.etymologyTip,
+    this.packId,
+    this.packLabel,
   });
 
   final int dayIndex;
@@ -39,6 +41,12 @@ class GameState {
   final String? message;
   final String? etymologyTip;
 
+  /// Null/empty = main daily. Otherwise thematic pack id.
+  final String? packId;
+  final String? packLabel;
+
+  bool get isPack => packId != null && packId!.isNotEmpty;
+
   static const maxRows = 6;
   static const wordLen = 5;
 
@@ -47,6 +55,8 @@ class GameState {
     required String answer,
     required int streak,
     String? etymologyTip,
+    String? packId,
+    String? packLabel,
   }) {
     return GameState(
       dayIndex: dayIndex,
@@ -61,6 +71,8 @@ class GameState {
       streak: streak,
       keyStates: {},
       etymologyTip: etymologyTip,
+      packId: packId,
+      packLabel: packLabel,
     );
   }
 
@@ -76,6 +88,8 @@ class GameState {
     String? message,
     bool clearMessage = false,
     String? etymologyTip,
+    String? packId,
+    String? packLabel,
   }) {
     return GameState(
       dayIndex: dayIndex ?? this.dayIndex,
@@ -88,6 +102,8 @@ class GameState {
       keyStates: keyStates ?? this.keyStates,
       message: clearMessage ? null : (message ?? this.message),
       etymologyTip: etymologyTip ?? this.etymologyTip,
+      packId: packId ?? this.packId,
+      packLabel: packLabel ?? this.packLabel,
     );
   }
 
