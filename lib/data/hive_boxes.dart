@@ -12,6 +12,8 @@ class HiveBoxes {
   static const keyManualTipReveal = 'manualTipReveal'; // tip1 free, pack puzzle
   static const keyAdTipUnlock = 'adTipUnlock'; // tip3 rewarded stub, pack
   static const keyGaveUp = 'gaveUp'; // pack give-up for current puzzle
+  static const keyRewardedLetterUsed = 'rewardedLetterUsed'; // pack 1× letter ad
+  static const keyRewardedLetterCol = 'rewardedLetterCol'; // column 0–4
 
   static late Box settings;
 

@@ -30,6 +30,8 @@ class GameState {
     this.manualTipUsed = false,
     this.adTipUnlocked = false,
     this.gaveUp = false,
+    this.rewardedLetterUsed = false,
+    this.rewardedLetterCol,
     this.packId,
     this.packLabel,
   });
@@ -59,6 +61,12 @@ class GameState {
   /// Pack-only: player resigned and revealed the answer.
   final bool gaveUp;
 
+  /// Pack-only: rewarded-letter ad used once for this puzzle.
+  final bool rewardedLetterUsed;
+
+  /// Pack-only: column filled by rewarded letter (0–4), if granted.
+  final int? rewardedLetterCol;
+
   /// Null/empty = main daily. Otherwise thematic pack id.
   final String? packId;
   final String? packLabel;
@@ -77,6 +85,8 @@ class GameState {
     bool manualTipUsed = false,
     bool adTipUnlocked = false,
     bool gaveUp = false,
+    bool rewardedLetterUsed = false,
+    int? rewardedLetterCol,
     String? packId,
     String? packLabel,
   }) {
@@ -97,6 +107,8 @@ class GameState {
       manualTipUsed: manualTipUsed,
       adTipUnlocked: adTipUnlocked,
       gaveUp: gaveUp,
+      rewardedLetterUsed: rewardedLetterUsed,
+      rewardedLetterCol: rewardedLetterCol,
       packId: packId,
       packLabel: packLabel,
     );
@@ -118,6 +130,9 @@ class GameState {
     bool? manualTipUsed,
     bool? adTipUnlocked,
     bool? gaveUp,
+    bool? rewardedLetterUsed,
+    int? rewardedLetterCol,
+    bool clearRewardedLetterCol = false,
     String? packId,
     String? packLabel,
   }) {
@@ -136,6 +151,10 @@ class GameState {
       manualTipUsed: manualTipUsed ?? this.manualTipUsed,
       adTipUnlocked: adTipUnlocked ?? this.adTipUnlocked,
       gaveUp: gaveUp ?? this.gaveUp,
+      rewardedLetterUsed: rewardedLetterUsed ?? this.rewardedLetterUsed,
+      rewardedLetterCol: clearRewardedLetterCol
+          ? null
+          : (rewardedLetterCol ?? this.rewardedLetterCol),
       packId: packId ?? this.packId,
       packLabel: packLabel ?? this.packLabel,
     );
@@ -213,6 +232,48 @@ class GameState {
   /// Highlight tip3 on win when it was unlocked (ad / give-up path).
   bool get highlightTip3OnWin =>
       status == GameStatus.won && isPackTipUnlocked(2);
+
+  /// Columns forced onto the current row by the rewarded letter (0–1 cols).
+  Set<int> get rewardedLockCols {
+    final rewarded = rewardedLetterCol;
+    if (rewarded == null || rewarded < 0 || rewarded >= wordLen) return {};
+    return {rewarded};
+  }
+
+  /// Columns already known green (submitted correct and/or rewarded letter).
+  Set<int> get greenLockedCols {
+    final cols = <int>{};
+    for (var r = 0; r < currentRow && r < rows.length; r++) {
+      for (var c = 0; c < wordLen; c++) {
+        if (rows[r][c].state == LetterState.correct) cols.add(c);
+      }
+    }
+    final rewarded = rewardedLetterCol;
+    if (rewarded != null && rewarded >= 0 && rewarded < wordLen) {
+      cols.add(rewarded);
+    }
+    return cols;
+  }
+
+  /// Answer positions not yet green-locked (candidates for rewarded letter).
+  List<int> get emptyLetterSlots {
+    final locked = greenLockedCols;
+    return [for (var c = 0; c < wordLen; c++) if (!locked.contains(c)) c];
+  }
+
+  /// Pack rewarded-letter CTA — 1× while playing, needs an empty slot.
+  bool get canGrantRewardedLetter {
+    if (!isPack || status != GameStatus.playing) return false;
+    if (gaveUp || rewardedLetterUsed) return false;
+    return emptyLetterSlots.isNotEmpty;
+  }
+
+  /// Known-green letter at [col] for hard-mode constraints / auto-fill.
+  String? knownGreenLetter(int col) {
+    if (col < 0 || col >= wordLen || answer.length != wordLen) return null;
+    if (!greenLockedCols.contains(col)) return null;
+    return answer[col];
+  }
 }
 
 /// Classic evaluation: greens first, then yellows with counts.

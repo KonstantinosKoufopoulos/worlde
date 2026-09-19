@@ -439,6 +439,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                             onUnlockAd: () => ref
                                 .read(gameControllerProvider(_scope).notifier)
                                 .unlockAdTip(),
+                            canGrantRewardedLetter: state.canGrantRewardedLetter,
+                            onGrantRewardedLetter: () => ref
+                                .read(gameControllerProvider(_scope).notifier)
+                                .grantRewardedLetter(),
                             canGiveUp: state.canGiveUp,
                             onGiveUp: () => _confirmGiveUp(context),
                           ),
@@ -613,6 +617,8 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                         'Υποδείξεις: tip1 με «Υπόδειξη» (δωρεάν, 1×/παζλ), '
                         'tip2 αυτόματα μετά από 4 αποτυχίες, '
                         'tip3 με «Ξεκλείδωσε με διαφήμιση».\n'
+                        '«Γράμμα με διαφήμιση» γεμίζει 1 σωστό πράσινο γράμμα '
+                        '(1×/παζλ, χωρίς να μετράει ως προσπάθεια).\n'
                         '«Παραίτηση» αποκαλύπτει τη λέξη και ξεκλειδώνει tip3.\n'
                         'Νέα λέξη κάθε μέρα από τη λίστα του πακέτου (UTC).\n'
                         'Το σερί του πακέτου είναι ξεχωριστό από το κύριο.'

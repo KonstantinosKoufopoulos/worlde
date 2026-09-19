@@ -140,4 +140,93 @@ void main() {
     final lines = text.split('\n').where((l) => l.contains('⬛') || l.contains('🟩') || l.contains('🟨'));
     expect(lines.length, 1);
   });
+
+  test('pack rewarded letter: slots, 1× gate, known green', () {
+    GameState pack({
+      required List<List<Tile>> rows,
+      int currentRow = 0,
+      GameStatus status = GameStatus.playing,
+      bool rewardedUsed = false,
+      int? rewardedCol,
+      bool gaveUp = false,
+    }) {
+      return GameState(
+        dayIndex: 0,
+        answer: 'ΑΘΗΝΑ',
+        rows: rows,
+        currentRow: currentRow,
+        currentGuess: '',
+        status: status,
+        streak: 0,
+        keyStates: const {},
+        packTips: const ['t1', 't2', 't3'],
+        rewardedLetterUsed: rewardedUsed,
+        rewardedLetterCol: rewardedCol,
+        gaveUp: gaveUp,
+        packId: 'mythology',
+        packLabel: '⚡ Μυθολογία',
+      );
+    }
+
+    final emptyRows = List.generate(
+      6,
+      (_) => List.generate(5, (_) => const Tile()),
+    );
+    final fresh = pack(rows: emptyRows);
+    expect(fresh.emptyLetterSlots, [0, 1, 2, 3, 4]);
+    expect(fresh.canGrantRewardedLetter, isTrue);
+    expect(fresh.knownGreenLetter(0), isNull);
+
+    // One submitted green at col 0.
+    final rows = List.generate(
+      6,
+      (_) => List.generate(5, (_) => const Tile()),
+    );
+    rows[0] = [
+      const Tile(letter: 'Α', state: LetterState.correct),
+      const Tile(letter: 'Β', state: LetterState.absent),
+      const Tile(letter: 'Γ', state: LetterState.absent),
+      const Tile(letter: 'Δ', state: LetterState.absent),
+      const Tile(letter: 'Ε', state: LetterState.absent),
+    ];
+    final partial = pack(rows: rows, currentRow: 1);
+    expect(partial.greenLockedCols, {0});
+    expect(partial.emptyLetterSlots, [1, 2, 3, 4]);
+    expect(partial.knownGreenLetter(0), 'Α');
+    expect(partial.canGrantRewardedLetter, isTrue);
+
+    final afterReward = pack(
+      rows: rows,
+      currentRow: 1,
+      rewardedUsed: true,
+      rewardedCol: 2,
+    );
+    expect(afterReward.greenLockedCols, {0, 2});
+    expect(afterReward.knownGreenLetter(2), 'Η');
+    expect(afterReward.canGrantRewardedLetter, isFalse);
+    expect(afterReward.emptyLetterSlots, [1, 3, 4]);
+
+    final won = pack(rows: emptyRows, status: GameStatus.won);
+    expect(won.canGrantRewardedLetter, isFalse);
+
+    final resigned = pack(
+      rows: emptyRows,
+      status: GameStatus.lost,
+      gaveUp: true,
+    );
+    expect(resigned.canGrantRewardedLetter, isFalse);
+
+    // Main daily: never.
+    final main = GameState(
+      dayIndex: 0,
+      answer: 'ΑΘΗΝΑ',
+      rows: emptyRows,
+      currentRow: 0,
+      currentGuess: '',
+      status: GameStatus.playing,
+      streak: 0,
+      keyStates: const {},
+    );
+    expect(main.canGrantRewardedLetter, isFalse);
+  });
 }

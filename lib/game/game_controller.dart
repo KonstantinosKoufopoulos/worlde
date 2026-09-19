@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/normalize.dart';
@@ -144,6 +145,8 @@ class GameController extends StateNotifier<GameState> {
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyManualTipReveal);
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyAdTipUnlock);
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyGaveUp);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyRewardedLetterUsed);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyRewardedLetterCol);
   }
 
   static GameState? _restore(
@@ -174,6 +177,15 @@ class GameController extends StateNotifier<GameState> {
     final adTipUnlocked =
         HiveBoxes.getScoped(packId, HiveBoxes.keyAdTipUnlock) == true;
     final gaveUp = HiveBoxes.getScoped(packId, HiveBoxes.keyGaveUp) == true;
+    final rewardedLetterUsed =
+        HiveBoxes.getScoped(packId, HiveBoxes.keyRewardedLetterUsed) == true;
+    final rewardedRaw =
+        HiveBoxes.getScoped(packId, HiveBoxes.keyRewardedLetterCol);
+    final int? rewardedLetterCol = rewardedRaw is int &&
+            rewardedRaw >= 0 &&
+            rewardedRaw < GameState.wordLen
+        ? rewardedRaw
+        : null;
 
     final rows = List.generate(
       GameState.maxRows,
@@ -191,11 +203,23 @@ class GameController extends StateNotifier<GameState> {
       }
     }
 
+    final currentRow = guesses.length.clamp(0, GameState.maxRows);
+    // Re-apply rewarded letter onto the in-progress row (does not use a guess).
+    if (status == GameStatus.playing &&
+        currentRow < GameState.maxRows &&
+        answer.length == GameState.wordLen &&
+        rewardedLetterCol != null) {
+      final c = rewardedLetterCol;
+      final ch = answer[c];
+      rows[currentRow][c] = Tile(letter: ch, state: LetterState.correct);
+      _mergeKey(keyStates, ch, LetterState.correct);
+    }
+
     return GameState(
       dayIndex: day,
       answer: answer,
       rows: rows,
-      currentRow: guesses.length.clamp(0, GameState.maxRows),
+      currentRow: currentRow,
       currentGuess: '',
       status: status,
       streak: streak,
@@ -205,6 +229,8 @@ class GameController extends StateNotifier<GameState> {
       manualTipUsed: manualTipUsed,
       adTipUnlocked: adTipUnlocked,
       gaveUp: gaveUp,
+      rewardedLetterUsed: rewardedLetterUsed,
+      rewardedLetterCol: rewardedLetterCol,
       packId: packId,
       packLabel: packLabel,
     );
@@ -247,6 +273,38 @@ class GameController extends StateNotifier<GameState> {
     if (!state.canUnlockAdTip) return;
     HiveBoxes.putScoped(_packId, HiveBoxes.keyAdTipUnlock, true);
     state = state.copyWith(adTipUnlocked: true, clearMessage: true);
+  }
+
+  /// Pack rewarded letter: web stub grants instantly (no real ads yet).
+  /// Fills one random non-green column with the correct letter on the current
+  /// row (green). Does not consume a guess row and never auto-wins.
+  void grantRewardedLetter() {
+    if (!state.canGrantRewardedLetter) return;
+    final slots = state.emptyLetterSlots;
+    if (slots.isEmpty) return;
+
+    final col = slots[Random().nextInt(slots.length)];
+    final letter = state.answer[col];
+
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyRewardedLetterUsed, true);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyRewardedLetterCol, col);
+
+    // Drop any typed letter that occupied this column in the composed row.
+    final typed = _typedGuessFromState(state);
+    final rebuilt = _rebuildTypedAfterLock(typed, state.rewardedLockCols, col);
+
+    final keyStates = Map<String, LetterState>.from(state.keyStates);
+    _mergeKey(keyStates, letter, LetterState.correct);
+
+    var next = state.copyWith(
+      rewardedLetterUsed: true,
+      rewardedLetterCol: col,
+      currentGuess: rebuilt,
+      keyStates: keyStates,
+      clearMessage: true,
+    );
+    next = _paintCurrentRow(next, rebuilt);
+    state = next;
   }
 
   /// Pack give-up: reveal answer, unlock tip3, mark lost + gaveUp.
@@ -300,20 +358,23 @@ class GameController extends StateNotifier<GameState> {
       return;
     }
     if (raw == 'BACK') {
-      if (state.currentGuess.isEmpty) return;
-      final next =
-          state.currentGuess.substring(0, state.currentGuess.length - 1);
-      state = _withGuess(next).copyWith(clearMessage: true);
+      final typed = _typedGuessFromState(state);
+      if (typed.isEmpty) return;
+      final next = typed.substring(0, typed.length - 1);
+      state = _paintCurrentRow(state, next).copyWith(clearMessage: true);
       return;
     }
 
-    if (state.currentGuess.length >= GameState.wordLen) return;
+    final locked = state.rewardedLockCols;
+    final typed = _typedGuessFromState(state);
+    final capacity = GameState.wordLen - locked.length;
+    if (typed.length >= capacity) return;
 
     final letter = _singleLetter(raw);
     if (letter == null) return;
 
-    final next = state.currentGuess + letter;
-    state = _withGuess(next).copyWith(clearMessage: true);
+    final next = typed + letter;
+    state = _paintCurrentRow(state, next).copyWith(clearMessage: true);
   }
 
   String? _singleLetter(String raw) {
@@ -325,28 +386,99 @@ class GameController extends StateNotifier<GameState> {
     return one[0];
   }
 
-  GameState _withGuess(String guess) {
-    final rows = state.rows.map((r) => List<Tile>.from(r)).toList();
-    final row = state.currentRow;
-    for (var c = 0; c < GameState.wordLen; c++) {
-      final ch = c < guess.length ? guess[c] : '';
-      rows[row][c] = Tile(
-        letter: ch,
-        state: ch.isEmpty ? LetterState.empty : LetterState.tbd,
-      );
+  /// User-typed letters for non-locked columns (left-to-right).
+  static String _typedGuessFromState(GameState s) => s.currentGuess;
+
+  static String _rebuildTypedAfterLock(
+    String typed,
+    Set<int> previouslyLocked,
+    int newLockCol,
+  ) {
+    // Reconstruct composed row from old locks + typed, then drop newLockCol.
+    final chars = List<String>.filled(GameState.wordLen, '');
+    for (final c in previouslyLocked) {
+      // answer letters are applied in paint; placeholder mark
+      chars[c] = '·';
     }
-    return state.copyWith(rows: rows, currentGuess: guess);
+    var ti = 0;
+    for (var c = 0; c < GameState.wordLen; c++) {
+      if (chars[c].isNotEmpty) continue;
+      if (ti < typed.length) {
+        chars[c] = typed[ti++];
+      }
+    }
+    chars[newLockCol] = '·';
+    final buf = StringBuffer();
+    for (var c = 0; c < GameState.wordLen; c++) {
+      if (chars[c].isEmpty || chars[c] == '·') continue;
+      buf.write(chars[c]);
+    }
+    return buf.toString();
+  }
+
+  /// Compose full 5-letter row from rewarded lock + typed letters.
+  static String? _composeGuess(GameState s, String typed) {
+    if (s.answer.length != GameState.wordLen) return null;
+    final locked = s.rewardedLockCols;
+    final chars = List<String>.filled(GameState.wordLen, '');
+    for (final c in locked) {
+      chars[c] = s.answer[c];
+    }
+    var ti = 0;
+    for (var c = 0; c < GameState.wordLen; c++) {
+      if (chars[c].isNotEmpty) continue;
+      if (ti >= typed.length) return null; // incomplete
+      chars[c] = typed[ti++];
+    }
+    if (ti != typed.length) return null;
+    return chars.join();
+  }
+
+  /// Paint current row: rewarded col = green correct; others from [typed].
+  GameState _paintCurrentRow(GameState s, String typed) {
+    final rows = s.rows.map((r) => List<Tile>.from(r)).toList();
+    final row = s.currentRow;
+    if (row >= GameState.maxRows) {
+      return s.copyWith(currentGuess: typed);
+    }
+    final locked = s.rewardedLockCols;
+    final answer = s.answer;
+    final chars = List<String>.filled(GameState.wordLen, '');
+    for (final c in locked) {
+      if (c < answer.length) chars[c] = answer[c];
+    }
+    var ti = 0;
+    for (var c = 0; c < GameState.wordLen; c++) {
+      if (chars[c].isNotEmpty) continue;
+      if (ti < typed.length) {
+        chars[c] = typed[ti++];
+      }
+    }
+    for (var c = 0; c < GameState.wordLen; c++) {
+      final ch = chars[c];
+      if (locked.contains(c) && ch.isNotEmpty) {
+        rows[row][c] = Tile(letter: ch, state: LetterState.correct);
+      } else if (ch.isEmpty) {
+        rows[row][c] = const Tile();
+      } else {
+        rows[row][c] = Tile(letter: ch, state: LetterState.tbd);
+      }
+    }
+    return s.copyWith(rows: rows, currentGuess: typed);
   }
 
   void _submit() {
     final words = _words;
     if (words == null) return;
-    if (state.currentGuess.length != GameState.wordLen) {
+
+    final typed = _typedGuessFromState(state);
+    final composed = _composeGuess(state, typed);
+    if (composed == null || composed.length != GameState.wordLen) {
       state = state.copyWith(message: 'Χρειάζονται 5 γράμματα');
       return;
     }
 
-    final key = normalizeGreekWord(state.currentGuess) ?? state.currentGuess;
+    final key = normalizeGreekWord(composed) ?? composed;
     if (!words.isValidGuess(key)) {
       state = state.copyWith(message: 'Η λέξη δεν υπάρχει στη λίστα');
       return;
@@ -382,7 +514,7 @@ class GameController extends StateNotifier<GameState> {
     HiveBoxes.putScoped(_packId, HiveBoxes.keyGameStatus, status.name);
     HiveBoxes.putScoped(_packId, HiveBoxes.keySavedDayIndex, state.dayIndex);
 
-    state = state.copyWith(
+    var next = state.copyWith(
       rows: rows,
       currentRow: nextRow,
       currentGuess: '',
@@ -394,6 +526,13 @@ class GameController extends StateNotifier<GameState> {
           ? 'Μπράβο!'
           : (lost ? 'Η λέξη ήταν ${state.answer}' : null),
     );
+
+    // Carry green locks onto the next in-progress row (no extra guess used).
+    if (status == GameStatus.playing && nextRow < GameState.maxRows) {
+      next = _paintCurrentRow(next, '');
+    }
+
+    state = next;
   }
 
   List<String> _persistedGuesses() {

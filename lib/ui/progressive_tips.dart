@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 /// Pack-only progressive tip stack (Christos polish):
 /// compact rows · dots 8px · unlocked tips in collapsible «Υποδείξεις (n)»
 /// (default collapsed after tip1) · tip1 free CTA · tip2 auto@4 fails ·
-/// tip3 ad CTA · give-up.
+/// tip3 ad CTA · rewarded letter CTA · give-up.
 class ProgressiveTipsPanel extends StatefulWidget {
   const ProgressiveTipsPanel({
     super.key,
@@ -16,6 +16,8 @@ class ProgressiveTipsPanel extends StatefulWidget {
     required this.onManualReveal,
     required this.canUnlockAd,
     required this.onUnlockAd,
+    required this.canGrantRewardedLetter,
+    required this.onGrantRewardedLetter,
     required this.canGiveUp,
     required this.onGiveUp,
   });
@@ -27,6 +29,8 @@ class ProgressiveTipsPanel extends StatefulWidget {
   final VoidCallback onManualReveal;
   final bool canUnlockAd;
   final VoidCallback onUnlockAd;
+  final bool canGrantRewardedLetter;
+  final VoidCallback onGrantRewardedLetter;
   final bool canGiveUp;
   final VoidCallback onGiveUp;
 
@@ -105,7 +109,9 @@ class _ProgressiveTipsPanelState extends State<ProgressiveTipsPanel> {
               ],
             ],
           ),
-          if (widget.canManualReveal || widget.canUnlockAd) ...[
+          if (widget.canManualReveal ||
+              widget.canUnlockAd ||
+              widget.canGrantRewardedLetter) ...[
             const SizedBox(height: 8),
             Wrap(
               alignment: WrapAlignment.center,
@@ -123,6 +129,12 @@ class _ProgressiveTipsPanelState extends State<ProgressiveTipsPanel> {
                     onPressed: widget.onUnlockAd,
                     icon: const Icon(Icons.play_circle_outline, size: 18),
                     label: const Text('Ξεκλείδωσε με διαφήμιση'),
+                  ),
+                if (widget.canGrantRewardedLetter)
+                  TextButton.icon(
+                    onPressed: widget.onGrantRewardedLetter,
+                    icon: const Icon(Icons.play_circle_outline, size: 18),
+                    label: const Text('Γράμμα με διαφήμιση'),
                   ),
               ],
             ),
