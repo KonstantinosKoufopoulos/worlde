@@ -16,9 +16,15 @@ String buildShareText(GameState state) {
   }
   buf.writeln();
 
+  // Win / give-up: only submitted rows. Full loss: all 6 rows.
+  // Never includes the answer word or tip text.
   final submitted = state.status == GameStatus.won
       ? state.currentRow
-      : (state.status == GameStatus.lost ? GameState.maxRows : state.currentRow);
+      : (state.gaveUp
+          ? state.currentRow
+          : (state.status == GameStatus.lost
+              ? GameState.maxRows
+              : state.currentRow));
 
   for (var r = 0; r < submitted; r++) {
     final row = state.rows[r];

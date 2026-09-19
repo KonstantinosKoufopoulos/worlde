@@ -9,7 +9,9 @@ class HiveBoxes {
   static const keyBoardRows = 'boardRows'; // persisted guesses for today
   static const keyGameStatus = 'gameStatus'; // playing | won | lost
   static const keySavedDayIndex = 'savedDayIndex';
-  static const keyManualTipReveal = 'manualTipReveal'; // bool, pack day
+  static const keyManualTipReveal = 'manualTipReveal'; // tip1 free, pack puzzle
+  static const keyAdTipUnlock = 'adTipUnlock'; // tip3 rewarded stub, pack
+  static const keyGaveUp = 'gaveUp'; // pack give-up for current puzzle
 
   static late Box settings;
 

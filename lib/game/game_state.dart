@@ -28,6 +28,8 @@ class GameState {
     this.etymologyTip,
     this.packTips = const [],
     this.manualTipUsed = false,
+    this.adTipUnlocked = false,
+    this.gaveUp = false,
     this.packId,
     this.packLabel,
   });
@@ -48,8 +50,14 @@ class GameState {
   /// Pack progressive tips (vague → specific), length 0–3.
   final List<String> packTips;
 
-  /// One free manual «Υπόδειξη» used for this pack day.
+  /// Pack tip1: one free «Υπόδειξη» used for this pack puzzle.
   final bool manualTipUsed;
+
+  /// Pack tip3: unlocked via rewarded-ad stub (or give-up).
+  final bool adTipUnlocked;
+
+  /// Pack-only: player resigned and revealed the answer.
+  final bool gaveUp;
 
   /// Null/empty = main daily. Otherwise thematic pack id.
   final String? packId;
@@ -67,6 +75,8 @@ class GameState {
     String? etymologyTip,
     List<String> packTips = const [],
     bool manualTipUsed = false,
+    bool adTipUnlocked = false,
+    bool gaveUp = false,
     String? packId,
     String? packLabel,
   }) {
@@ -85,6 +95,8 @@ class GameState {
       etymologyTip: etymologyTip,
       packTips: packTips,
       manualTipUsed: manualTipUsed,
+      adTipUnlocked: adTipUnlocked,
+      gaveUp: gaveUp,
       packId: packId,
       packLabel: packLabel,
     );
@@ -104,6 +116,8 @@ class GameState {
     String? etymologyTip,
     List<String>? packTips,
     bool? manualTipUsed,
+    bool? adTipUnlocked,
+    bool? gaveUp,
     String? packId,
     String? packLabel,
   }) {
@@ -120,6 +134,8 @@ class GameState {
       etymologyTip: etymologyTip ?? this.etymologyTip,
       packTips: packTips ?? this.packTips,
       manualTipUsed: manualTipUsed ?? this.manualTipUsed,
+      adTipUnlocked: adTipUnlocked ?? this.adTipUnlocked,
+      gaveUp: gaveUp ?? this.gaveUp,
       packId: packId ?? this.packId,
       packLabel: packLabel ?? this.packLabel,
     );
@@ -131,7 +147,9 @@ class GameState {
   /// Number of submitted guesses (1–6). After a win, [currentRow] has already advanced.
   int get guessesUsed {
     if (status == GameStatus.won) return currentRow;
-    if (status == GameStatus.lost) return maxRows;
+    if (status == GameStatus.lost) {
+      return gaveUp ? currentRow : maxRows;
+    }
     return currentRow;
   }
 
@@ -146,27 +164,15 @@ class GameState {
     return currentRow;
   }
 
-  /// Auto unlock from wrong guesses: tip1@1, tip2@3, tip3@5.
-  int get autoRevealedTipCount {
-    final f = failedGuesses;
-    if (f >= 5) return 3;
-    if (f >= 3) return 2;
-    if (f >= 1) return 1;
-    return 0;
-  }
-
-  /// Whether pack tip at [index] (0-based) is unlocked.
-  /// tip1 after 1st fail, tip2 after 3rd, tip3 after 5th OR manual «Υπόδειξη».
-  /// On win every tip is unlocked.
+  /// Pack tip unlock (Christos):
+  /// tip1 = free «Υπόδειξη» once; tip2 = auto after 4 fails; tip3 = ad stub / give-up.
+  /// Win does **not** force-unlock remaining tips.
   bool isPackTipUnlocked(int index) {
     if (!isPack || index < 0 || index >= packTips.length) return false;
-    if (status == GameStatus.won) return true;
-    final f = failedGuesses;
-    if (index == 0) return f >= 1;
-    if (index == 1) return f >= 3;
-    if (index == 2) return f >= 5 || manualTipUsed;
-    // Extra tips beyond 3 (if any): require same as tip3 auto threshold.
-    return f >= 5 || manualTipUsed;
+    if (index == 0) return manualTipUsed;
+    if (index == 1) return failedGuesses >= 4;
+    if (index == 2) return adTipUnlocked || gaveUp;
+    return adTipUnlocked || gaveUp;
   }
 
   /// Count of unlocked pack tips (for dots).
@@ -179,15 +185,34 @@ class GameState {
     return n;
   }
 
-  /// One free manual reveal per pack day — unlocks tip3 early (not tip1/2).
+  /// Free tip1 «Υπόδειξη» — 1× per pack puzzle, anytime while playing.
   bool get canManualRevealTip {
     if (!isPack || status != GameStatus.playing) return false;
     if (manualTipUsed) return false;
-    if (packTips.length < 3) return false;
-    // Already unlocked via 5th fail.
-    if (failedGuesses >= 5) return false;
+    if (packTips.isEmpty) return false;
     return true;
   }
+
+  /// Tip3 rewarded-ad stub CTA — anytime while playing until unlocked.
+  bool get canUnlockAdTip {
+    if (!isPack || status != GameStatus.playing) return false;
+    if (packTips.length < 3) return false;
+    if (adTipUnlocked || gaveUp) return false;
+    return true;
+  }
+
+  /// Muted give-up CTA while a pack puzzle is in progress.
+  bool get canGiveUp {
+    if (!isPack || status != GameStatus.playing) return false;
+    return true;
+  }
+
+  /// After give-up: show «Επόμενη» to advance this pack's puzzle index.
+  bool get canAdvancePack => isPack && gaveUp && status == GameStatus.lost;
+
+  /// Highlight tip3 on win when it was unlocked (ad / give-up path).
+  bool get highlightTip3OnWin =>
+      status == GameStatus.won && isPackTipUnlocked(2);
 }
 
 /// Classic evaluation: greens first, then yellows with counts.

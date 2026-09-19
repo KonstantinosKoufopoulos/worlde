@@ -2,22 +2,31 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
-/// Pack-only progressive tip stack: dots 1/2/3, locked=blur, unlock slide.
+/// Pack-only progressive tip stack (Christos):
+/// tip1 free CTA · tip2 auto@4 fails · tip3 ad CTA with play icon · give-up.
 class ProgressiveTipsPanel extends StatelessWidget {
   const ProgressiveTipsPanel({
     super.key,
     required this.tips,
     required this.isUnlocked,
-    required this.highlightLast,
+    required this.highlightTip3,
     required this.canManualReveal,
     required this.onManualReveal,
+    required this.canUnlockAd,
+    required this.onUnlockAd,
+    required this.canGiveUp,
+    required this.onGiveUp,
   });
 
   final List<String> tips;
   final bool Function(int index) isUnlocked;
-  final bool highlightLast;
+  final bool highlightTip3;
   final bool canManualReveal;
   final VoidCallback onManualReveal;
+  final bool canUnlockAd;
+  final VoidCallback onUnlockAd;
+  final bool canGiveUp;
+  final VoidCallback onGiveUp;
 
   @override
   Widget build(BuildContext context) {
@@ -25,12 +34,12 @@ class ProgressiveTipsPanel extends StatelessWidget {
 
     final scheme = Theme.of(context).colorScheme;
     final count = tips.length.clamp(1, 3);
-    final lastIndex = count - 1;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
@@ -48,7 +57,8 @@ class ProgressiveTipsPanel extends StatelessWidget {
                 if (i > 0) const SizedBox(width: 6),
                 _TipDot(
                   unlocked: isUnlocked(i),
-                  highlight: highlightLast && i == lastIndex && isUnlocked(i),
+                  highlight: highlightTip3 && i == 2 && isUnlocked(i),
+                  showPlay: i == 2 && !isUnlocked(i),
                 ),
               ],
             ],
@@ -59,17 +69,43 @@ class ProgressiveTipsPanel extends StatelessWidget {
             _TipRow(
               tip: tips[i],
               unlocked: isUnlocked(i),
-              highlight: highlightLast && i == lastIndex && isUnlocked(i),
+              highlight: highlightTip3 && i == 2 && isUnlocked(i),
+              showPlayIcon: i == 2 && !isUnlocked(i),
             ),
           ],
-          if (canManualReveal) ...[
+          if (canManualReveal || canUnlockAd) ...[
             const SizedBox(height: 10),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (canManualReveal)
+                  TextButton.icon(
+                    onPressed: onManualReveal,
+                    icon: const Icon(Icons.lightbulb_outline, size: 18),
+                    label: const Text('Υπόδειξη'),
+                  ),
+                if (canUnlockAd)
+                  TextButton.icon(
+                    onPressed: onUnlockAd,
+                    icon: const Icon(Icons.play_circle_outline, size: 18),
+                    label: const Text('Ξεκλείδωσε με διαφήμιση'),
+                  ),
+              ],
+            ),
+          ],
+          if (canGiveUp) ...[
+            const SizedBox(height: 2),
             Align(
               alignment: Alignment.center,
-              child: TextButton.icon(
-                onPressed: onManualReveal,
-                icon: const Icon(Icons.lock_open_outlined, size: 18),
-                label: const Text('Υπόδειξη'),
+              child: TextButton(
+                onPressed: onGiveUp,
+                style: TextButton.styleFrom(
+                  foregroundColor: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                  textStyle: Theme.of(context).textTheme.labelMedium,
+                ),
+                child: const Text('Παραίτηση'),
               ),
             ),
           ],
@@ -83,14 +119,23 @@ class _TipDot extends StatelessWidget {
   const _TipDot({
     required this.unlocked,
     required this.highlight,
+    this.showPlay = false,
   });
 
   final bool unlocked;
   final bool highlight;
+  final bool showPlay;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (showPlay) {
+      return Icon(
+        Icons.play_circle_outline,
+        size: 14,
+        color: scheme.outline,
+      );
+    }
     final color = !unlocked
         ? scheme.outlineVariant
         : (highlight ? scheme.tertiary : scheme.primary);
@@ -111,11 +156,13 @@ class _TipRow extends StatefulWidget {
     required this.tip,
     required this.unlocked,
     required this.highlight,
+    this.showPlayIcon = false,
   });
 
   final String tip;
   final bool unlocked;
   final bool highlight;
+  final bool showPlayIcon;
 
   @override
   State<_TipRow> createState() => _TipRowState();
@@ -177,14 +224,26 @@ class _TipRowState extends State<_TipRow> with SingleTickerProviderStateMixin {
       color: bg,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Text(
-          widget.unlocked ? widget.tip : '• • • • • • • • • •',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: fg,
-                fontWeight: widget.highlight ? FontWeight.w700 : FontWeight.w500,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.showPlayIcon) ...[
+              Icon(Icons.play_circle_outline, size: 18, color: fg.withValues(alpha: 0.7)),
+              const SizedBox(width: 8),
+            ],
+            Expanded(
+              child: Text(
+                widget.unlocked ? widget.tip : '• • • • • • • • • •',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: fg,
+                      fontWeight:
+                          widget.highlight ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );

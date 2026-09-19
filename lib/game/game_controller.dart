@@ -53,11 +53,13 @@ class GameController extends StateNotifier<GameState> {
     String? packLabel,
   })  : _words = words,
         _packId = packId,
+        _packLabel = packLabel,
         super(_buildInitial(words, packId: packId, packLabel: packLabel));
 
   GameController.loading({String? packId})
       : _words = null,
         _packId = packId,
+        _packLabel = null,
         super(
           GameState(
             dayIndex: 0,
@@ -77,13 +79,26 @@ class GameController extends StateNotifier<GameState> {
 
   final WordDict? _words;
   final String? _packId;
+  final String? _packLabel;
+
+
+  /// Main = UTC calendar day. Packs keep a cursor that can run ahead via
+  /// «Επόμενη» after give-up, and catch up when the calendar advances.
+  static int _resolveDay({String? packId}) {
+    final calendar = DictRepository.dayIndex();
+    if (packId == null || packId.isEmpty) return calendar;
+    final saved =
+        HiveBoxes.getScoped(packId, HiveBoxes.keySavedDayIndex) as int?;
+    if (saved != null && saved >= calendar) return saved;
+    return calendar;
+  }
 
   static GameState _buildInitial(
     WordDict words, {
     String? packId,
     String? packLabel,
   }) {
-    final day = DictRepository.dayIndex();
+    final day = _resolveDay(packId: packId);
     final answer = words.answerForDay(day);
     final tips = words.tipsFor(answer);
     final isPack = packId != null && packId.isNotEmpty;
@@ -107,10 +122,8 @@ class GameController extends StateNotifier<GameState> {
       );
       if (restored != null) return restored;
     } else {
-      // New day — clear board persistence for this scope only
-      HiveBoxes.deleteScoped(packId, HiveBoxes.keyBoardRows);
-      HiveBoxes.deleteScoped(packId, HiveBoxes.keyGameStatus);
-      HiveBoxes.deleteScoped(packId, HiveBoxes.keyManualTipReveal);
+      // New puzzle index — clear board / tip flags for this scope only
+      _clearPuzzlePersistence(packId);
       HiveBoxes.putScoped(packId, HiveBoxes.keySavedDayIndex, day);
     }
 
@@ -123,6 +136,14 @@ class GameController extends StateNotifier<GameState> {
       packId: packId,
       packLabel: packLabel,
     );
+  }
+
+  static void _clearPuzzlePersistence(String? packId) {
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyBoardRows);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyGameStatus);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyManualTipReveal);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyAdTipUnlock);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyGaveUp);
   }
 
   static GameState? _restore(
@@ -150,6 +171,9 @@ class GameController extends StateNotifier<GameState> {
 
     final manualTipUsed =
         HiveBoxes.getScoped(packId, HiveBoxes.keyManualTipReveal) == true;
+    final adTipUnlocked =
+        HiveBoxes.getScoped(packId, HiveBoxes.keyAdTipUnlock) == true;
+    final gaveUp = HiveBoxes.getScoped(packId, HiveBoxes.keyGaveUp) == true;
 
     final rows = List.generate(
       GameState.maxRows,
@@ -179,6 +203,8 @@ class GameController extends StateNotifier<GameState> {
       etymologyTip: tip,
       packTips: packTips,
       manualTipUsed: manualTipUsed,
+      adTipUnlocked: adTipUnlocked,
+      gaveUp: gaveUp,
       packId: packId,
       packLabel: packLabel,
     );
@@ -209,11 +235,60 @@ class GameController extends StateNotifier<GameState> {
     }
   }
 
-  /// One free pack-day manual reveal — unlocks tip3 early (Hive-persisted).
+  /// Pack tip1: free «Υπόδειξη» once per puzzle (Hive-persisted).
   void revealManualTip() {
     if (!state.canManualRevealTip) return;
     HiveBoxes.putScoped(_packId, HiveBoxes.keyManualTipReveal, true);
     state = state.copyWith(manualTipUsed: true, clearMessage: true);
+  }
+
+  /// Pack tip3: rewarded-ad stub — web grants instantly (no real ads yet).
+  void unlockAdTip() {
+    if (!state.canUnlockAdTip) return;
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyAdTipUnlock, true);
+    state = state.copyWith(adTipUnlocked: true, clearMessage: true);
+  }
+
+  /// Pack give-up: reveal answer, unlock tip3, mark lost + gaveUp.
+  void giveUp() {
+    if (!state.canGiveUp) return;
+    _updateStreakOnLoss();
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyGameStatus, GameStatus.lost.name);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyGaveUp, true);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyAdTipUnlock, true);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keySavedDayIndex, state.dayIndex);
+    state = state.copyWith(
+      status: GameStatus.lost,
+      gaveUp: true,
+      adTipUnlocked: true,
+      streak: 0,
+      currentGuess: '',
+      message: 'Η λέξη ήταν ${state.answer}',
+    );
+  }
+
+  /// After give-up «Επόμενη»: advance this pack's day/index and load next puzzle.
+  void advancePackPuzzle() {
+    if (!state.canAdvancePack) return;
+    final words = _words;
+    if (words == null) return;
+
+    final nextDay = state.dayIndex + 1;
+    _clearPuzzlePersistence(_packId);
+    HiveBoxes.putScoped(_packId, HiveBoxes.keySavedDayIndex, nextDay);
+
+    final answer = words.answerForDay(nextDay);
+    final packTips = words.tipsFor(answer);
+    final streak = HiveBoxes.streakFor(_packId);
+
+    state = GameState.initial(
+      dayIndex: nextDay,
+      answer: answer,
+      streak: streak,
+      packTips: packTips,
+      packId: _packId,
+      packLabel: _packLabel ?? state.packLabel,
+    );
   }
 
   void onKey(String raw) {

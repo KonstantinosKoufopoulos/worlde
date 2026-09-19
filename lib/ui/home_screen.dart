@@ -429,11 +429,27 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                           ProgressiveTipsPanel(
                             tips: state.packTips,
                             isUnlocked: state.isPackTipUnlocked,
-                            highlightLast: state.status == GameStatus.won,
+                            highlightTip3: state.highlightTip3OnWin ||
+                                (state.gaveUp && state.isPackTipUnlocked(2)),
                             canManualReveal: state.canManualRevealTip,
                             onManualReveal: () => ref
                                 .read(gameControllerProvider(_scope).notifier)
                                 .revealManualTip(),
+                            canUnlockAd: state.canUnlockAdTip,
+                            onUnlockAd: () => ref
+                                .read(gameControllerProvider(_scope).notifier)
+                                .unlockAdTip(),
+                            canGiveUp: state.canGiveUp,
+                            onGiveUp: () => _confirmGiveUp(context),
+                          ),
+                        if (state.canAdvancePack)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: FilledButton.icon(
+                              onPressed: _advancePack,
+                              icon: const Icon(Icons.arrow_forward),
+                              label: const Text('Επόμενη'),
+                            ),
                           ),
                         if (showShare)
                           Padding(
@@ -444,7 +460,9 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                               label: Text(
                                 state.status == GameStatus.won
                                     ? 'Κοινοποίηση αποτελέσματος'
-                                    : 'Κοινοποίηση · λέξη: ${state.answer}',
+                                    : (isPack
+                                        ? 'Κοινοποίηση αποτελέσματος'
+                                        : 'Κοινοποίηση · λέξη: ${state.answer}'),
                               ),
                             ),
                           ),
@@ -465,6 +483,50 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
               ),
       ),
     );
+  }
+
+  Future<void> _confirmGiveUp(BuildContext context) async {
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Να αποκαλυφθεί η λέξη;',
+                style: Theme.of(ctx).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Ναι'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Όχι'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    ref.read(gameControllerProvider(_scope).notifier).giveUp();
+  }
+
+  void _advancePack() {
+    _shareDelayTimer?.cancel();
+    setState(() {
+      _confettiPlaying = false;
+      _shareVisible = false;
+      _handledInitialFinish = false;
+    });
+    ref.read(gameControllerProvider(_scope).notifier).advancePackPuzzle();
   }
 
   void _showHelp(BuildContext context, GameState state) {
@@ -490,8 +552,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                         'Πράσινο = σωστό γράμμα στη σωστή θέση.\n'
                         'Κίτρινο = υπάρχει στη λέξη, άλλη θέση.\n'
                         'Γκρι = δεν υπάρχει στη λέξη.\n\n'
-                        'Υποδείξεις: tip1 μετά την 1η αποτυχία, tip2 μετά την 3η, '
-                        'tip3 μετά την 5η ή με «Υπόδειξη» (1 φορά/ημέρα).\n'
+                        'Υποδείξεις: tip1 με «Υπόδειξη» (δωρεάν, 1×/παζλ), '
+                        'tip2 αυτόματα μετά από 4 αποτυχίες, '
+                        'tip3 με «Ξεκλείδωσε με διαφήμιση».\n'
+                        '«Παραίτηση» αποκαλύπτει τη λέξη και ξεκλειδώνει tip3.\n'
                         'Νέα λέξη κάθε μέρα από τη λίστα του πακέτου (UTC).\n'
                         'Το σερί του πακέτου είναι ξεχωριστό από το κύριο.'
                     : 'Μάντεψε τη λέξη της ημέρας σε 6 προσπάθειες.\n'
