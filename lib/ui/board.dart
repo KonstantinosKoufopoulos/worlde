@@ -22,6 +22,8 @@ class GameBoard extends StatelessWidget {
         final tile = tileFromW < tileFromH ? tileFromW : tileFromH;
         final boardW = tile * cols + gap * (cols - 1);
         final boardH = tile * rowCount + gap * (rowCount - 1);
+        // Christos: letter size scales with tile, clamped 22–28.
+        final fontSize = (tile * 0.48).clamp(22.0, 28.0);
 
         return Center(
           child: SizedBox(
@@ -38,7 +40,10 @@ class GameBoard extends StatelessWidget {
                         SizedBox(
                           width: tile,
                           height: tile,
-                          child: _TileView(tile: rows[r][c]),
+                          child: _TileView(
+                            tile: rows[r][c],
+                            fontSize: fontSize,
+                          ),
                         ),
                       ],
                     ],
@@ -54,9 +59,10 @@ class GameBoard extends StatelessWidget {
 }
 
 class _TileView extends StatelessWidget {
-  const _TileView({required this.tile});
+  const _TileView({required this.tile, required this.fontSize});
 
   final Tile tile;
+  final double fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +81,7 @@ class _TileView extends StatelessWidget {
                 ? LexColors.tileBorderDark
                 : LexColors.tileBorder));
     final fg = filled
-        ? Colors.white
+        ? foregroundForLetterState(tile.state)
         : Theme.of(context).colorScheme.onSurface;
 
     return AnimatedContainer(
@@ -84,13 +90,18 @@ class _TileView extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: borderColor, width: tile.letter.isEmpty && !filled ? 2 : 2),
+        border: Border.all(
+          color: borderColor,
+          width: tile.letter.isEmpty && !filled ? 2 : 2,
+        ),
       ),
       child: Text(
         tile.letter,
+        textAlign: TextAlign.center,
         style: TextStyle(
-          fontSize: 22,
+          fontSize: fontSize,
           fontWeight: FontWeight.w700,
+          height: 1.0,
           color: fg,
         ),
       ),

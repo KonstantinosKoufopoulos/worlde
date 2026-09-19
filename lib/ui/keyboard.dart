@@ -92,8 +92,9 @@ class _LetterKey extends StatelessWidget {
         : (brightness == Brightness.dark
             ? const Color(0xFF818384)
             : const Color(0xFFD3D6DA));
-    final fg =
-        evaluated ? Colors.white : Theme.of(context).colorScheme.onSurface;
+    final fg = evaluated
+        ? foregroundForLetterState(state)
+        : Theme.of(context).colorScheme.onSurface;
 
     return Material(
       color: bg,

@@ -486,37 +486,95 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   }
 
   Future<void> _confirmGiveUp(BuildContext context) async {
-    final confirmed = await showModalBottomSheet<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
-      showDragHandle: true,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
       builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Να αποκαλυφθεί η λέξη;',
-                style: Theme.of(ctx).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('Ναι'),
-              ),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('Όχι'),
-              ),
-            ],
+        return AlertDialog(
+          title: const Text('Να αποκαλυφθεί η λέξη;'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Όχι'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Ναι'),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !context.mounted) return;
+    ref.read(gameControllerProvider(_scope).notifier).giveUp();
+    if (!context.mounted) return;
+    await _showResignRevealModal();
+  }
+
+  /// Christos resign reveal: centered modal, word 32–40 bold, no tip clutter.
+  Future<void> _showResignRevealModal() async {
+    final answer = ref.read(gameControllerProvider(_scope)).answer;
+    if (answer.isEmpty) return;
+
+    final action = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (ctx) {
+        final width = MediaQuery.sizeOf(ctx).width;
+        final wordSize = (width * 0.09).clamp(32.0, 40.0);
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Η λέξη ήταν',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  answer,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: wordSize,
+                    fontWeight: FontWeight.w700,
+                    height: 1.0,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop('next'),
+                    child: const Text('Επόμενη'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(ctx).pop('close'),
+                    child: const Text('Κλείσιμο'),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
     );
-    if (confirmed != true || !mounted) return;
-    ref.read(gameControllerProvider(_scope).notifier).giveUp();
+
+    if (!mounted) return;
+    if (action == 'next') {
+      _advancePack();
+    }
   }
 
   void _advancePack() {

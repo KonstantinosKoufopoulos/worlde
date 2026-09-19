@@ -4,12 +4,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/hive_boxes.dart';
 import '../game/game_state.dart';
 
+/// Accessible Wordle-like palette: letter on fill ≥ 4.5:1 (WCAG AA).
 class LexColors {
-  static const correct = Color(0xFF6AAA64);
-  static const present = Color(0xFFC9B458);
-  static const absent = Color(0xFF787C7E);
+  /// Darker green so white glyphs clear AA (was #6AAA64 ≈ 2.8:1).
+  static const correct = Color(0xFF3A7D44);
+
+  /// Muted gold; white glyphs clear AA (was #C9B458 ≈ 2.1:1).
+  static const present = Color(0xFF8A7520);
+
+  /// Darker gray so white glyphs clear AA (was #787C7E ≈ 4.2:1).
+  static const absent = Color(0xFF6B6F71);
+
   static const tileBorder = Color(0xFFD3D6DA);
   static const tileBorderDark = Color(0xFF3A3A3C);
+
+  /// Foreground on filled tile/key — white on all three AA fills.
+  static const onFilled = Color(0xFFFFFFFF);
 }
 
 Color colorForLetterState(LetterState state, Brightness brightness) {
@@ -20,6 +30,18 @@ Color colorForLetterState(LetterState state, Brightness brightness) {
       return LexColors.present;
     case LetterState.absent:
       return LexColors.absent;
+    case LetterState.tbd:
+    case LetterState.empty:
+      return Colors.transparent;
+  }
+}
+
+Color foregroundForLetterState(LetterState state) {
+  switch (state) {
+    case LetterState.correct:
+    case LetterState.present:
+    case LetterState.absent:
+      return LexColors.onFilled;
     case LetterState.tbd:
     case LetterState.empty:
       return Colors.transparent;
