@@ -85,7 +85,11 @@ class GameController extends StateNotifier<GameState> {
   }) {
     final day = DictRepository.dayIndex();
     final answer = words.answerForDay(day);
-    final tip = words.tipFor(answer);
+    final tips = words.tipsFor(answer);
+    final isPack = packId != null && packId.isNotEmpty;
+    final packTips = isPack ? tips : const <String>[];
+    // Main daily keeps single tip for post-win TipCard.
+    final singleTip = isPack ? null : words.tipFor(answer);
     final streak = HiveBoxes.streakFor(packId);
 
     final savedDay =
@@ -96,7 +100,8 @@ class GameController extends StateNotifier<GameState> {
         day,
         answer,
         streak,
-        tip,
+        singleTip,
+        packTips: packTips,
         packId: packId,
         packLabel: packLabel,
       );
@@ -105,6 +110,7 @@ class GameController extends StateNotifier<GameState> {
       // New day — clear board persistence for this scope only
       HiveBoxes.deleteScoped(packId, HiveBoxes.keyBoardRows);
       HiveBoxes.deleteScoped(packId, HiveBoxes.keyGameStatus);
+      HiveBoxes.deleteScoped(packId, HiveBoxes.keyManualTipReveal);
       HiveBoxes.putScoped(packId, HiveBoxes.keySavedDayIndex, day);
     }
 
@@ -112,7 +118,8 @@ class GameController extends StateNotifier<GameState> {
       dayIndex: day,
       answer: answer,
       streak: streak,
-      etymologyTip: tip,
+      etymologyTip: singleTip,
+      packTips: packTips,
       packId: packId,
       packLabel: packLabel,
     );
@@ -123,6 +130,7 @@ class GameController extends StateNotifier<GameState> {
     String answer,
     int streak,
     String? tip, {
+    required List<String> packTips,
     String? packId,
     String? packLabel,
   }) {
@@ -139,6 +147,9 @@ class GameController extends StateNotifier<GameState> {
       (s) => s.name == statusName,
       orElse: () => GameStatus.playing,
     );
+
+    final manualTipUsed =
+        HiveBoxes.getScoped(packId, HiveBoxes.keyManualTipReveal) == true;
 
     final rows = List.generate(
       GameState.maxRows,
@@ -166,6 +177,8 @@ class GameController extends StateNotifier<GameState> {
       streak: streak,
       keyStates: keyStates,
       etymologyTip: tip,
+      packTips: packTips,
+      manualTipUsed: manualTipUsed,
       packId: packId,
       packLabel: packLabel,
     );
@@ -194,6 +207,13 @@ class GameController extends StateNotifier<GameState> {
     if (state.message != null) {
       state = state.copyWith(clearMessage: true);
     }
+  }
+
+  /// One free pack-day manual reveal — unlocks tip3 early (Hive-persisted).
+  void revealManualTip() {
+    if (!state.canManualRevealTip) return;
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyManualTipReveal, true);
+    state = state.copyWith(manualTipUsed: true, clearMessage: true);
   }
 
   void onKey(String raw) {

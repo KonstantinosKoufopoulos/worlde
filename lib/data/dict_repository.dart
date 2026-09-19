@@ -10,7 +10,7 @@ class DictRepository {
   static final DictRepository instance = DictRepository._();
 
   /// Shipped thematic packs (assets under assets/dict/packs/{id}/).
-  static const catalogPackIds = ['mythology'];
+  static const catalogPackIds = ['mythology', 'cities', 'food'];
 
   WordDict? _main;
   final Map<String, WordDict> _packs = {};
@@ -27,7 +27,12 @@ class DictRepository {
   /// Back-compat accessors used by older call sites.
   List<String> get answers => main.answers;
   Set<String> get guesses => main.guesses;
-  Map<String, String> get etymology => main.etymology;
+
+  /// Flattened first tip per key (legacy string map view).
+  Map<String, String> get etymology => {
+        for (final e in main.etymology.entries)
+          if (e.value.isNotEmpty) e.key: e.value.first,
+      };
 
   Future<void> load() async {
     if (_main != null) return;
@@ -91,12 +96,14 @@ class DictRepository {
     final etyRaw =
         await rootBundle.loadString('$assetDir/etymology.json');
 
+    final etyMap = (jsonDecode(etyRaw) as Map).map(
+      (k, v) => MapEntry(k.toString(), WordDict.parseTips(v)),
+    );
+
     return WordDict(
       answers: (jsonDecode(answersRaw) as List).cast<String>(),
       guesses: (jsonDecode(guessesRaw) as List).cast<String>().toSet(),
-      etymology: (jsonDecode(etyRaw) as Map).map(
-        (k, v) => MapEntry(k.toString(), v.toString()),
-      ),
+      etymology: etyMap,
     );
   }
 }

@@ -29,3 +29,11 @@ flutter:
     - assets/dict/packs/mythology/guesses.json
     - assets/dict/packs/mythology/etymology.json
     - assets/dict/packs/mythology/meta.json
+    - assets/dict/packs/cities/answers.json
+    - assets/dict/packs/cities/guesses.json
+    - assets/dict/packs/cities/etymology.json
+    - assets/dict/packs/cities/meta.json
+    - assets/dict/packs/food/answers.json
+    - assets/dict/packs/food/guesses.json
+    - assets/dict/packs/food/etymology.json
+    - assets/dict/packs/food/meta.json

@@ -13,6 +13,7 @@ import 'board.dart';
 import 'keyboard.dart';
 import 'share.dart';
 import 'theme.dart';
+import 'progressive_tips.dart';
 import 'tip_card.dart';
 import 'win_confetti.dart';
 
@@ -342,9 +343,13 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       }
     });
 
-    final showTip = state.status == GameStatus.won &&
+    // Main daily: single tip after win only. Packs use progressive panel.
+    final showMainTip = !isPack &&
+        state.status == GameStatus.won &&
         state.etymologyTip != null &&
         state.etymologyTip!.isNotEmpty;
+
+    final showPackTips = isPack && state.packTips.isNotEmpty;
 
     final showShare = state.isFinished && _shareVisible;
 
@@ -413,13 +418,23 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                                     ),
                           ),
                         ),
-                        if (showTip) TipCard(tip: state.etymologyTip!),
+                        if (showMainTip) TipCard(tip: state.etymologyTip!),
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                             child: GameBoard(rows: state.rows),
                           ),
                         ),
+                        if (showPackTips)
+                          ProgressiveTipsPanel(
+                            tips: state.packTips,
+                            isUnlocked: state.isPackTipUnlocked,
+                            highlightLast: state.status == GameStatus.won,
+                            canManualReveal: state.canManualRevealTip,
+                            onManualReveal: () => ref
+                                .read(gameControllerProvider(_scope).notifier)
+                                .revealManualTip(),
+                          ),
                         if (showShare)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 8),
@@ -475,6 +490,8 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                         'Πράσινο = σωστό γράμμα στη σωστή θέση.\n'
                         'Κίτρινο = υπάρχει στη λέξη, άλλη θέση.\n'
                         'Γκρι = δεν υπάρχει στη λέξη.\n\n'
+                        'Υποδείξεις: tip1 μετά την 1η αποτυχία, tip2 μετά την 3η, '
+                        'tip3 μετά την 5η ή με «Υπόδειξη» (1 φορά/ημέρα).\n'
                         'Νέα λέξη κάθε μέρα από τη λίστα του πακέτου (UTC).\n'
                         'Το σερί του πακέτου είναι ξεχωριστό από το κύριο.'
                     : 'Μάντεψε τη λέξη της ημέρας σε 6 προσπάθειες.\n'

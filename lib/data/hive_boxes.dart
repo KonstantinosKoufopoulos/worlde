@@ -9,6 +9,7 @@ class HiveBoxes {
   static const keyBoardRows = 'boardRows'; // persisted guesses for today
   static const keyGameStatus = 'gameStatus'; // playing | won | lost
   static const keySavedDayIndex = 'savedDayIndex';
+  static const keyManualTipReveal = 'manualTipReveal'; // bool, pack day
 
   static late Box settings;
 

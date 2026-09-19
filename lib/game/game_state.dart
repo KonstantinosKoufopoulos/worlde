@@ -26,6 +26,8 @@ class GameState {
     required this.keyStates,
     this.message,
     this.etymologyTip,
+    this.packTips = const [],
+    this.manualTipUsed = false,
     this.packId,
     this.packLabel,
   });
@@ -39,7 +41,15 @@ class GameState {
   final int streak;
   final Map<String, LetterState> keyStates;
   final String? message;
+
+  /// Main daily: single tip shown after win. Packs prefer [packTips].
   final String? etymologyTip;
+
+  /// Pack progressive tips (vague → specific), length 0–3.
+  final List<String> packTips;
+
+  /// One free manual «Υπόδειξη» used for this pack day.
+  final bool manualTipUsed;
 
   /// Null/empty = main daily. Otherwise thematic pack id.
   final String? packId;
@@ -55,6 +65,8 @@ class GameState {
     required String answer,
     required int streak,
     String? etymologyTip,
+    List<String> packTips = const [],
+    bool manualTipUsed = false,
     String? packId,
     String? packLabel,
   }) {
@@ -71,6 +83,8 @@ class GameState {
       streak: streak,
       keyStates: {},
       etymologyTip: etymologyTip,
+      packTips: packTips,
+      manualTipUsed: manualTipUsed,
       packId: packId,
       packLabel: packLabel,
     );
@@ -88,6 +102,8 @@ class GameState {
     String? message,
     bool clearMessage = false,
     String? etymologyTip,
+    List<String>? packTips,
+    bool? manualTipUsed,
     String? packId,
     String? packLabel,
   }) {
@@ -102,6 +118,8 @@ class GameState {
       keyStates: keyStates ?? this.keyStates,
       message: clearMessage ? null : (message ?? this.message),
       etymologyTip: etymologyTip ?? this.etymologyTip,
+      packTips: packTips ?? this.packTips,
+      manualTipUsed: manualTipUsed ?? this.manualTipUsed,
       packId: packId ?? this.packId,
       packLabel: packLabel ?? this.packLabel,
     );
@@ -118,6 +136,58 @@ class GameState {
   }
 
   bool get wonInGuesses => status == GameStatus.won;
+
+  /// Wrong submitted guesses so far (excludes the winning guess).
+  int get failedGuesses {
+    if (status == GameStatus.won) {
+      final n = currentRow - 1;
+      return n < 0 ? 0 : n;
+    }
+    return currentRow;
+  }
+
+  /// Auto unlock from wrong guesses: tip1@1, tip2@3, tip3@5.
+  int get autoRevealedTipCount {
+    final f = failedGuesses;
+    if (f >= 5) return 3;
+    if (f >= 3) return 2;
+    if (f >= 1) return 1;
+    return 0;
+  }
+
+  /// Whether pack tip at [index] (0-based) is unlocked.
+  /// tip1 after 1st fail, tip2 after 3rd, tip3 after 5th OR manual «Υπόδειξη».
+  /// On win every tip is unlocked.
+  bool isPackTipUnlocked(int index) {
+    if (!isPack || index < 0 || index >= packTips.length) return false;
+    if (status == GameStatus.won) return true;
+    final f = failedGuesses;
+    if (index == 0) return f >= 1;
+    if (index == 1) return f >= 3;
+    if (index == 2) return f >= 5 || manualTipUsed;
+    // Extra tips beyond 3 (if any): require same as tip3 auto threshold.
+    return f >= 5 || manualTipUsed;
+  }
+
+  /// Count of unlocked pack tips (for dots).
+  int get revealedTipCount {
+    if (!isPack || packTips.isEmpty) return 0;
+    var n = 0;
+    for (var i = 0; i < packTips.length; i++) {
+      if (isPackTipUnlocked(i)) n++;
+    }
+    return n;
+  }
+
+  /// One free manual reveal per pack day — unlocks tip3 early (not tip1/2).
+  bool get canManualRevealTip {
+    if (!isPack || status != GameStatus.playing) return false;
+    if (manualTipUsed) return false;
+    if (packTips.length < 3) return false;
+    // Already unlocked via 5th fail.
+    if (failedGuesses >= 5) return false;
+    return true;
+  }
 }
 
 /// Classic evaluation: greens first, then yellows with counts.
