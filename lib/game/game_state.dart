@@ -26,12 +26,8 @@ class GameState {
     required this.keyStates,
     this.message,
     this.etymologyTip,
-    this.packTips = const [],
-    this.manualTipUsed = false,
-    this.adTipUnlocked = false,
     this.gaveUp = false,
-    this.rewardedLetterUsed = false,
-    this.rewardedLetterCol,
+    this.rewardedLetterCols = const [],
     this.packId,
     this.packLabel,
   });
@@ -46,26 +42,14 @@ class GameState {
   final Map<String, LetterState> keyStates;
   final String? message;
 
-  /// Main daily: single tip shown after win. Packs prefer [packTips].
+  /// Main daily: single tip shown after win. Packs do not use this.
   final String? etymologyTip;
-
-  /// Pack progressive tips (vague → specific), length 0–3.
-  final List<String> packTips;
-
-  /// Pack tip1: one free «Υπόδειξη» used for this pack puzzle.
-  final bool manualTipUsed;
-
-  /// Pack tip3: unlocked via rewarded-ad stub (or give-up).
-  final bool adTipUnlocked;
 
   /// Pack-only: player resigned and revealed the answer.
   final bool gaveUp;
 
-  /// Pack-only: rewarded-letter ad used once for this puzzle.
-  final bool rewardedLetterUsed;
-
-  /// Pack-only: column filled by rewarded letter (0–4), if granted.
-  final int? rewardedLetterCol;
+  /// Pack-only: columns filled by rewarded letters (0–3 entries, each 0–4).
+  final List<int> rewardedLetterCols;
 
   /// Null/empty = main daily. Otherwise thematic pack id.
   final String? packId;
@@ -75,18 +59,15 @@ class GameState {
 
   static const maxRows = 6;
   static const wordLen = 5;
+  static const maxRewardedLetters = 3;
 
   factory GameState.initial({
     required int dayIndex,
     required String answer,
     required int streak,
     String? etymologyTip,
-    List<String> packTips = const [],
-    bool manualTipUsed = false,
-    bool adTipUnlocked = false,
     bool gaveUp = false,
-    bool rewardedLetterUsed = false,
-    int? rewardedLetterCol,
+    List<int> rewardedLetterCols = const [],
     String? packId,
     String? packLabel,
   }) {
@@ -103,12 +84,8 @@ class GameState {
       streak: streak,
       keyStates: {},
       etymologyTip: etymologyTip,
-      packTips: packTips,
-      manualTipUsed: manualTipUsed,
-      adTipUnlocked: adTipUnlocked,
       gaveUp: gaveUp,
-      rewardedLetterUsed: rewardedLetterUsed,
-      rewardedLetterCol: rewardedLetterCol,
+      rewardedLetterCols: rewardedLetterCols,
       packId: packId,
       packLabel: packLabel,
     );
@@ -126,13 +103,8 @@ class GameState {
     String? message,
     bool clearMessage = false,
     String? etymologyTip,
-    List<String>? packTips,
-    bool? manualTipUsed,
-    bool? adTipUnlocked,
     bool? gaveUp,
-    bool? rewardedLetterUsed,
-    int? rewardedLetterCol,
-    bool clearRewardedLetterCol = false,
+    List<int>? rewardedLetterCols,
     String? packId,
     String? packLabel,
   }) {
@@ -147,14 +119,8 @@ class GameState {
       keyStates: keyStates ?? this.keyStates,
       message: clearMessage ? null : (message ?? this.message),
       etymologyTip: etymologyTip ?? this.etymologyTip,
-      packTips: packTips ?? this.packTips,
-      manualTipUsed: manualTipUsed ?? this.manualTipUsed,
-      adTipUnlocked: adTipUnlocked ?? this.adTipUnlocked,
       gaveUp: gaveUp ?? this.gaveUp,
-      rewardedLetterUsed: rewardedLetterUsed ?? this.rewardedLetterUsed,
-      rewardedLetterCol: clearRewardedLetterCol
-          ? null
-          : (rewardedLetterCol ?? this.rewardedLetterCol),
+      rewardedLetterCols: rewardedLetterCols ?? this.rewardedLetterCols,
       packId: packId ?? this.packId,
       packLabel: packLabel ?? this.packLabel,
     );
@@ -183,43 +149,6 @@ class GameState {
     return currentRow;
   }
 
-  /// Pack tip unlock (Christos):
-  /// tip1 = free «Υπόδειξη» once; tip2 = auto after 4 fails; tip3 = ad stub / give-up.
-  /// Win does **not** force-unlock remaining tips.
-  bool isPackTipUnlocked(int index) {
-    if (!isPack || index < 0 || index >= packTips.length) return false;
-    if (index == 0) return manualTipUsed;
-    if (index == 1) return failedGuesses >= 4;
-    if (index == 2) return adTipUnlocked || gaveUp;
-    return adTipUnlocked || gaveUp;
-  }
-
-  /// Count of unlocked pack tips (for dots).
-  int get revealedTipCount {
-    if (!isPack || packTips.isEmpty) return 0;
-    var n = 0;
-    for (var i = 0; i < packTips.length; i++) {
-      if (isPackTipUnlocked(i)) n++;
-    }
-    return n;
-  }
-
-  /// Free tip1 «Υπόδειξη» — 1× per pack puzzle, anytime while playing.
-  bool get canManualRevealTip {
-    if (!isPack || status != GameStatus.playing) return false;
-    if (manualTipUsed) return false;
-    if (packTips.isEmpty) return false;
-    return true;
-  }
-
-  /// Tip3 rewarded-ad stub CTA — anytime while playing until unlocked.
-  bool get canUnlockAdTip {
-    if (!isPack || status != GameStatus.playing) return false;
-    if (packTips.length < 3) return false;
-    if (adTipUnlocked || gaveUp) return false;
-    return true;
-  }
-
   /// Muted give-up CTA while a pack puzzle is in progress.
   bool get canGiveUp {
     if (!isPack || status != GameStatus.playing) return false;
@@ -229,18 +158,18 @@ class GameState {
   /// After give-up: show «Επόμενη» to advance this pack's puzzle index.
   bool get canAdvancePack => isPack && gaveUp && status == GameStatus.lost;
 
-  /// Highlight tip3 on win when it was unlocked (ad / give-up path).
-  bool get highlightTip3OnWin =>
-      status == GameStatus.won && isPackTipUnlocked(2);
+  int get rewardedLetterCount => rewardedLetterCols.length;
 
-  /// Columns forced onto the current row by the rewarded letter (0–1 cols).
+  /// Columns forced onto the current row by rewarded letters.
   Set<int> get rewardedLockCols {
-    final rewarded = rewardedLetterCol;
-    if (rewarded == null || rewarded < 0 || rewarded >= wordLen) return {};
-    return {rewarded};
+    final cols = <int>{};
+    for (final c in rewardedLetterCols) {
+      if (c >= 0 && c < wordLen) cols.add(c);
+    }
+    return cols;
   }
 
-  /// Columns already known green (submitted correct and/or rewarded letter).
+  /// Columns already known green (submitted correct and/or rewarded letters).
   Set<int> get greenLockedCols {
     final cols = <int>{};
     for (var r = 0; r < currentRow && r < rows.length; r++) {
@@ -248,10 +177,7 @@ class GameState {
         if (rows[r][c].state == LetterState.correct) cols.add(c);
       }
     }
-    final rewarded = rewardedLetterCol;
-    if (rewarded != null && rewarded >= 0 && rewarded < wordLen) {
-      cols.add(rewarded);
-    }
+    cols.addAll(rewardedLockCols);
     return cols;
   }
 
@@ -261,10 +187,12 @@ class GameState {
     return [for (var c = 0; c < wordLen; c++) if (!locked.contains(c)) c];
   }
 
-  /// Pack rewarded-letter CTA — 1× while playing, needs an empty slot.
+  /// Pack rewarded-letter CTA — up to 3× while playing, needs an empty slot.
+  /// Granting the last empty slot never auto-solves (caller must not win).
   bool get canGrantRewardedLetter {
     if (!isPack || status != GameStatus.playing) return false;
-    if (gaveUp || rewardedLetterUsed) return false;
+    if (gaveUp) return false;
+    if (rewardedLetterCount >= maxRewardedLetters) return false;
     return emptyLetterSlots.isNotEmpty;
   }
 

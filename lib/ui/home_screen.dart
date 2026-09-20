@@ -13,7 +13,7 @@ import 'board.dart';
 import 'keyboard.dart';
 import 'share.dart';
 import 'theme.dart';
-import 'progressive_tips.dart';
+import 'pack_assists.dart';
 import 'tip_card.dart';
 import 'win_confetti.dart';
 
@@ -343,13 +343,13 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
       }
     });
 
-    // Main daily: single tip after win only. Packs use progressive panel.
+    // Main daily: single tip after win only. Packs: letter assists (no tip stack).
     final showMainTip = !isPack &&
         state.status == GameStatus.won &&
         state.etymologyTip != null &&
         state.etymologyTip!.isNotEmpty;
 
-    final showPackTips = isPack && state.packTips.isNotEmpty;
+    final showPackAssists = isPack;
 
     final showShare = state.isFinished && _shareVisible;
 
@@ -425,20 +425,9 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                             child: GameBoard(rows: state.rows),
                           ),
                         ),
-                        if (showPackTips)
-                          ProgressiveTipsPanel(
-                            tips: state.packTips,
-                            isUnlocked: state.isPackTipUnlocked,
-                            highlightTip3: state.highlightTip3OnWin ||
-                                (state.gaveUp && state.isPackTipUnlocked(2)),
-                            canManualReveal: state.canManualRevealTip,
-                            onManualReveal: () => ref
-                                .read(gameControllerProvider(_scope).notifier)
-                                .revealManualTip(),
-                            canUnlockAd: state.canUnlockAdTip,
-                            onUnlockAd: () => ref
-                                .read(gameControllerProvider(_scope).notifier)
-                                .unlockAdTip(),
+                        if (showPackAssists)
+                          PackAssistsPanel(
+                            rewardedLetterCount: state.rewardedLetterCount,
                             canGrantRewardedLetter: state.canGrantRewardedLetter,
                             onGrantRewardedLetter: () => ref
                                 .read(gameControllerProvider(_scope).notifier)
@@ -614,12 +603,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                         'Πράσινο = σωστό γράμμα στη σωστή θέση.\n'
                         'Κίτρινο = υπάρχει στη λέξη, άλλη θέση.\n'
                         'Γκρι = δεν υπάρχει στη λέξη.\n\n'
-                        'Υποδείξεις: tip1 με «Υπόδειξη» (δωρεάν, 1×/παζλ), '
-                        'tip2 αυτόματα μετά από 4 αποτυχίες, '
-                        'tip3 με «Ξεκλείδωσε με διαφήμιση».\n'
                         '«Γράμμα με διαφήμιση» γεμίζει 1 σωστό πράσινο γράμμα '
-                        '(1×/παζλ, χωρίς να μετράει ως προσπάθεια).\n'
-                        '«Παραίτηση» αποκαλύπτει τη λέξη και ξεκλειδώνει tip3.\n'
+                        'σε τυχαία κενή θέση (έως 3×/παζλ, χωρίς να μετράει '
+                        'ως προσπάθεια και χωρίς αυτόματη λύση).\n'
+                        '«Παραίτηση» αποκαλύπτει τη λέξη.\n'
                         'Νέα λέξη κάθε μέρα από τη λίστα του πακέτου (UTC).\n'
                         'Το σερί του πακέτου είναι ξεχωριστό από το κύριο.'
                     : 'Μάντεψε τη λέξη της ημέρας σε 6 προσπάθειες.\n'

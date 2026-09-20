@@ -28,85 +28,7 @@ void main() {
     expect(WordDict.parseTips(null), isEmpty);
   });
 
-  test('pack tip unlock: tip1 manual, tip2 @4 fails, tip3 ad/give-up', () {
-    GameState base({
-      required int currentRow,
-      GameStatus status = GameStatus.playing,
-      bool manual = false,
-      bool ad = false,
-      bool gaveUp = false,
-    }) {
-      return GameState(
-        dayIndex: 0,
-        answer: 'ΑΘΗΝΑ',
-        rows: List.generate(
-          6,
-          (_) => List.generate(5, (_) => const Tile()),
-        ),
-        currentRow: currentRow,
-        currentGuess: '',
-        status: status,
-        streak: 0,
-        keyStates: const {},
-        packTips: const ['t1', 't2', 't3'],
-        manualTipUsed: manual,
-        adTipUnlocked: ad,
-        gaveUp: gaveUp,
-        packId: 'mythology',
-        packLabel: '⚡ Μυθολογία',
-      );
-    }
-
-    final zero = base(currentRow: 0);
-    expect(zero.isPackTipUnlocked(0), isFalse);
-    expect(zero.isPackTipUnlocked(1), isFalse);
-    expect(zero.isPackTipUnlocked(2), isFalse);
-    expect(zero.canManualRevealTip, isTrue);
-    expect(zero.canUnlockAdTip, isTrue);
-    expect(zero.canGiveUp, isTrue);
-
-    final tip1 = base(currentRow: 0, manual: true);
-    expect(tip1.isPackTipUnlocked(0), isTrue);
-    expect(tip1.isPackTipUnlocked(1), isFalse);
-    expect(tip1.canManualRevealTip, isFalse);
-
-    final threeFails = base(currentRow: 3);
-    expect(threeFails.isPackTipUnlocked(1), isFalse);
-
-    final fourFails = base(currentRow: 4);
-    expect(fourFails.isPackTipUnlocked(1), isTrue);
-    expect(fourFails.isPackTipUnlocked(2), isFalse);
-
-    final adUnlock = base(currentRow: 1, ad: true);
-    expect(adUnlock.isPackTipUnlocked(2), isTrue);
-    expect(adUnlock.canUnlockAdTip, isFalse);
-
-    final resigned = base(
-      currentRow: 2,
-      status: GameStatus.lost,
-      gaveUp: true,
-      ad: true,
-    );
-    expect(resigned.isPackTipUnlocked(2), isTrue);
-    expect(resigned.canAdvancePack, isTrue);
-    expect(resigned.canGiveUp, isFalse);
-
-    // Win does not force-unlock locked tips.
-    final won = base(currentRow: 2, status: GameStatus.won, manual: true);
-    expect(won.isPackTipUnlocked(0), isTrue);
-    expect(won.isPackTipUnlocked(1), isFalse);
-    expect(won.isPackTipUnlocked(2), isFalse);
-    expect(won.highlightTip3OnWin, isFalse);
-
-    final wonWithTip3 = base(
-      currentRow: 2,
-      status: GameStatus.won,
-      ad: true,
-    );
-    expect(wonWithTip3.highlightTip3OnWin, isTrue);
-  });
-
-  test('share after give-up is X/6 without answer word', () {
+  test('share after give-up is X/6 without answer word or tip spoilers', () {
     final state = GameState(
       dayIndex: 3,
       answer: 'ΑΘΗΝΑ',
@@ -125,9 +47,7 @@ void main() {
       status: GameStatus.lost,
       streak: 0,
       keyStates: const {},
-      packTips: const ['t1', 't2', 't3'],
       gaveUp: true,
-      adTipUnlocked: true,
       packId: 'mythology',
       packLabel: '⚡ Μυθολογία',
     );
@@ -135,19 +55,43 @@ void main() {
     final text = buildShareText(state);
     expect(text.contains('X/6'), isTrue);
     expect(text.contains('ΑΘΗΝΑ'), isFalse);
-    expect(text.contains('t1'), isFalse);
+    expect(text.toLowerCase().contains('tip'), isFalse);
+    expect(text.contains('Υπόδειξη'), isFalse);
     // Only the one submitted row of emoji squares.
-    final lines = text.split('\n').where((l) => l.contains('⬛') || l.contains('🟩') || l.contains('🟨'));
+    final lines = text
+        .split('\n')
+        .where((l) => l.contains('⬛') || l.contains('🟩') || l.contains('🟨'));
     expect(lines.length, 1);
   });
 
-  test('pack rewarded letter: slots, 1× gate, known green', () {
+  test('pack resign: canAdvancePack after give-up', () {
+    final resigned = GameState(
+      dayIndex: 0,
+      answer: 'ΑΘΗΝΑ',
+      rows: List.generate(
+        6,
+        (_) => List.generate(5, (_) => const Tile()),
+      ),
+      currentRow: 2,
+      currentGuess: '',
+      status: GameStatus.lost,
+      streak: 0,
+      keyStates: const {},
+      gaveUp: true,
+      packId: 'mythology',
+      packLabel: '⚡ Μυθολογία',
+    );
+    expect(resigned.canAdvancePack, isTrue);
+    expect(resigned.canGiveUp, isFalse);
+    expect(resigned.canGrantRewardedLetter, isFalse);
+  });
+
+  test('pack rewarded letter: up to 3×, slots, never on main', () {
     GameState pack({
       required List<List<Tile>> rows,
       int currentRow = 0,
       GameStatus status = GameStatus.playing,
-      bool rewardedUsed = false,
-      int? rewardedCol,
+      List<int> rewardedCols = const [],
       bool gaveUp = false,
     }) {
       return GameState(
@@ -159,9 +103,7 @@ void main() {
         status: status,
         streak: 0,
         keyStates: const {},
-        packTips: const ['t1', 't2', 't3'],
-        rewardedLetterUsed: rewardedUsed,
-        rewardedLetterCol: rewardedCol,
+        rewardedLetterCols: rewardedCols,
         gaveUp: gaveUp,
         packId: 'mythology',
         packLabel: '⚡ Μυθολογία',
@@ -175,6 +117,7 @@ void main() {
     final fresh = pack(rows: emptyRows);
     expect(fresh.emptyLetterSlots, [0, 1, 2, 3, 4]);
     expect(fresh.canGrantRewardedLetter, isTrue);
+    expect(fresh.rewardedLetterCount, 0);
     expect(fresh.knownGreenLetter(0), isNull);
 
     // One submitted green at col 0.
@@ -195,16 +138,51 @@ void main() {
     expect(partial.knownGreenLetter(0), 'Α');
     expect(partial.canGrantRewardedLetter, isTrue);
 
-    final afterReward = pack(
+    final afterOne = pack(
       rows: rows,
       currentRow: 1,
-      rewardedUsed: true,
-      rewardedCol: 2,
+      rewardedCols: [2],
     );
-    expect(afterReward.greenLockedCols, {0, 2});
-    expect(afterReward.knownGreenLetter(2), 'Η');
-    expect(afterReward.canGrantRewardedLetter, isFalse);
-    expect(afterReward.emptyLetterSlots, [1, 3, 4]);
+    expect(afterOne.greenLockedCols, {0, 2});
+    expect(afterOne.knownGreenLetter(2), 'Η');
+    expect(afterOne.rewardedLetterCount, 1);
+    expect(afterOne.canGrantRewardedLetter, isTrue);
+    expect(afterOne.emptyLetterSlots, [1, 3, 4]);
+
+    final afterTwo = pack(
+      rows: rows,
+      currentRow: 1,
+      rewardedCols: [2, 4],
+    );
+    expect(afterTwo.rewardedLetterCount, 2);
+    expect(afterTwo.canGrantRewardedLetter, isTrue);
+
+    final afterThree = pack(
+      rows: rows,
+      currentRow: 1,
+      rewardedCols: [2, 4, 1],
+    );
+    expect(afterThree.rewardedLetterCount, 3);
+    expect(afterThree.canGrantRewardedLetter, isFalse);
+    expect(afterThree.emptyLetterSlots, [3]);
+
+    // Last empty still grantable when under 3/3 (never auto-solves by itself).
+    final lastEmpty = pack(
+      rows: rows,
+      currentRow: 1,
+      rewardedCols: [1, 2, 3],
+    );
+    // col 0 locked by guess; 1,2,3 rewarded → only col 4 empty, but already 3/3
+    expect(lastEmpty.emptyLetterSlots, [4]);
+    expect(lastEmpty.canGrantRewardedLetter, isFalse);
+
+    final oneLeftUnderCap = pack(
+      rows: rows,
+      currentRow: 1,
+      rewardedCols: [2, 3],
+    );
+    expect(oneLeftUnderCap.emptyLetterSlots, [1, 4]);
+    expect(oneLeftUnderCap.canGrantRewardedLetter, isTrue);
 
     final won = pack(rows: emptyRows, status: GameStatus.won);
     expect(won.canGrantRewardedLetter, isFalse);
@@ -215,6 +193,19 @@ void main() {
       gaveUp: true,
     );
     expect(resigned.canGrantRewardedLetter, isFalse);
+
+    // Zero empty slots → disabled even under 3/3.
+    final allGreenRows = List.generate(
+      6,
+      (_) => List.generate(5, (_) => const Tile()),
+    );
+    allGreenRows[0] = [
+      for (var i = 0; i < 5; i++)
+        Tile(letter: 'ΑΘΗΝΑ'[i], state: LetterState.correct),
+    ];
+    final noSlots = pack(rows: allGreenRows, currentRow: 1, rewardedCols: []);
+    expect(noSlots.emptyLetterSlots, isEmpty);
+    expect(noSlots.canGrantRewardedLetter, isFalse);
 
     // Main daily: never.
     final main = GameState(

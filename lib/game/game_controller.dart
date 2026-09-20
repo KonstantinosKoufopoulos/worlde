@@ -82,7 +82,6 @@ class GameController extends StateNotifier<GameState> {
   final String? _packId;
   final String? _packLabel;
 
-
   /// Main = UTC calendar day. Packs keep a cursor that can run ahead via
   /// «Επόμενη» after give-up, and catch up when the calendar advances.
   static int _resolveDay({String? packId}) {
@@ -101,10 +100,8 @@ class GameController extends StateNotifier<GameState> {
   }) {
     final day = _resolveDay(packId: packId);
     final answer = words.answerForDay(day);
-    final tips = words.tipsFor(answer);
     final isPack = packId != null && packId.isNotEmpty;
-    final packTips = isPack ? tips : const <String>[];
-    // Main daily keeps single tip for post-win TipCard.
+    // Main daily keeps single tip for post-win TipCard. Packs: no tip stack.
     final singleTip = isPack ? null : words.tipFor(answer);
     final streak = HiveBoxes.streakFor(packId);
 
@@ -117,13 +114,12 @@ class GameController extends StateNotifier<GameState> {
         answer,
         streak,
         singleTip,
-        packTips: packTips,
         packId: packId,
         packLabel: packLabel,
       );
       if (restored != null) return restored;
     } else {
-      // New puzzle index — clear board / tip flags for this scope only
+      // New puzzle index — clear board / assist flags for this scope only
       _clearPuzzlePersistence(packId);
       HiveBoxes.putScoped(packId, HiveBoxes.keySavedDayIndex, day);
     }
@@ -133,7 +129,6 @@ class GameController extends StateNotifier<GameState> {
       answer: answer,
       streak: streak,
       etymologyTip: singleTip,
-      packTips: packTips,
       packId: packId,
       packLabel: packLabel,
     );
@@ -142,11 +137,36 @@ class GameController extends StateNotifier<GameState> {
   static void _clearPuzzlePersistence(String? packId) {
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyBoardRows);
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyGameStatus);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyGaveUp);
+    HiveBoxes.deleteScoped(packId, HiveBoxes.keyRewardedLetterCols);
+    // Legacy tip / 1× letter keys
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyManualTipReveal);
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyAdTipUnlock);
-    HiveBoxes.deleteScoped(packId, HiveBoxes.keyGaveUp);
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyRewardedLetterUsed);
     HiveBoxes.deleteScoped(packId, HiveBoxes.keyRewardedLetterCol);
+  }
+
+  static List<int> _loadRewardedCols(String? packId) {
+    final raw = HiveBoxes.getScoped(packId, HiveBoxes.keyRewardedLetterCols);
+    if (raw is List) {
+      final cols = <int>[];
+      for (final e in raw) {
+        if (e is int && e >= 0 && e < GameState.wordLen && !cols.contains(e)) {
+          cols.add(e);
+        }
+      }
+      if (cols.length > GameState.maxRewardedLetters) {
+        return cols.sublist(0, GameState.maxRewardedLetters);
+      }
+      return cols;
+    }
+    // Migrate legacy single-column grant.
+    final legacy =
+        HiveBoxes.getScoped(packId, HiveBoxes.keyRewardedLetterCol);
+    if (legacy is int && legacy >= 0 && legacy < GameState.wordLen) {
+      return [legacy];
+    }
+    return const [];
   }
 
   static GameState? _restore(
@@ -154,7 +174,6 @@ class GameController extends StateNotifier<GameState> {
     String answer,
     int streak,
     String? tip, {
-    required List<String> packTips,
     String? packId,
     String? packLabel,
   }) {
@@ -172,20 +191,8 @@ class GameController extends StateNotifier<GameState> {
       orElse: () => GameStatus.playing,
     );
 
-    final manualTipUsed =
-        HiveBoxes.getScoped(packId, HiveBoxes.keyManualTipReveal) == true;
-    final adTipUnlocked =
-        HiveBoxes.getScoped(packId, HiveBoxes.keyAdTipUnlock) == true;
     final gaveUp = HiveBoxes.getScoped(packId, HiveBoxes.keyGaveUp) == true;
-    final rewardedLetterUsed =
-        HiveBoxes.getScoped(packId, HiveBoxes.keyRewardedLetterUsed) == true;
-    final rewardedRaw =
-        HiveBoxes.getScoped(packId, HiveBoxes.keyRewardedLetterCol);
-    final int? rewardedLetterCol = rewardedRaw is int &&
-            rewardedRaw >= 0 &&
-            rewardedRaw < GameState.wordLen
-        ? rewardedRaw
-        : null;
+    final rewardedLetterCols = _loadRewardedCols(packId);
 
     final rows = List.generate(
       GameState.maxRows,
@@ -204,15 +211,16 @@ class GameController extends StateNotifier<GameState> {
     }
 
     final currentRow = guesses.length.clamp(0, GameState.maxRows);
-    // Re-apply rewarded letter onto the in-progress row (does not use a guess).
+    // Re-apply rewarded letters onto the in-progress row (does not use a guess).
     if (status == GameStatus.playing &&
         currentRow < GameState.maxRows &&
-        answer.length == GameState.wordLen &&
-        rewardedLetterCol != null) {
-      final c = rewardedLetterCol;
-      final ch = answer[c];
-      rows[currentRow][c] = Tile(letter: ch, state: LetterState.correct);
-      _mergeKey(keyStates, ch, LetterState.correct);
+        answer.length == GameState.wordLen) {
+      for (final c in rewardedLetterCols) {
+        if (c < 0 || c >= GameState.wordLen) continue;
+        final ch = answer[c];
+        rows[currentRow][c] = Tile(letter: ch, state: LetterState.correct);
+        _mergeKey(keyStates, ch, LetterState.correct);
+      }
     }
 
     return GameState(
@@ -225,12 +233,8 @@ class GameController extends StateNotifier<GameState> {
       streak: streak,
       keyStates: keyStates,
       etymologyTip: tip,
-      packTips: packTips,
-      manualTipUsed: manualTipUsed,
-      adTipUnlocked: adTipUnlocked,
       gaveUp: gaveUp,
-      rewardedLetterUsed: rewardedLetterUsed,
-      rewardedLetterCol: rewardedLetterCol,
+      rewardedLetterCols: rewardedLetterCols,
       packId: packId,
       packLabel: packLabel,
     );
@@ -261,23 +265,10 @@ class GameController extends StateNotifier<GameState> {
     }
   }
 
-  /// Pack tip1: free «Υπόδειξη» once per puzzle (Hive-persisted).
-  void revealManualTip() {
-    if (!state.canManualRevealTip) return;
-    HiveBoxes.putScoped(_packId, HiveBoxes.keyManualTipReveal, true);
-    state = state.copyWith(manualTipUsed: true, clearMessage: true);
-  }
-
-  /// Pack tip3: rewarded-ad stub — web grants instantly (no real ads yet).
-  void unlockAdTip() {
-    if (!state.canUnlockAdTip) return;
-    HiveBoxes.putScoped(_packId, HiveBoxes.keyAdTipUnlock, true);
-    state = state.copyWith(adTipUnlocked: true, clearMessage: true);
-  }
-
   /// Pack rewarded letter: web stub grants instantly (no real ads yet).
   /// Fills one random non-green column with the correct letter on the current
-  /// row (green). Does not consume a guess row and never auto-wins.
+  /// row (green). Does not consume a guess row and never auto-wins — even when
+  /// filling the last empty slot.
   void grantRewardedLetter() {
     if (!state.canGrantRewardedLetter) return;
     final slots = state.emptyLetterSlots;
@@ -286,8 +277,8 @@ class GameController extends StateNotifier<GameState> {
     final col = slots[Random().nextInt(slots.length)];
     final letter = state.answer[col];
 
-    HiveBoxes.putScoped(_packId, HiveBoxes.keyRewardedLetterUsed, true);
-    HiveBoxes.putScoped(_packId, HiveBoxes.keyRewardedLetterCol, col);
+    final nextCols = [...state.rewardedLetterCols, col];
+    HiveBoxes.putScoped(_packId, HiveBoxes.keyRewardedLetterCols, nextCols);
 
     // Drop any typed letter that occupied this column in the composed row.
     final typed = _typedGuessFromState(state);
@@ -297,28 +288,27 @@ class GameController extends StateNotifier<GameState> {
     _mergeKey(keyStates, letter, LetterState.correct);
 
     var next = state.copyWith(
-      rewardedLetterUsed: true,
-      rewardedLetterCol: col,
+      rewardedLetterCols: nextCols,
       currentGuess: rebuilt,
       keyStates: keyStates,
       clearMessage: true,
     );
+    // Paint only — never change status to won here.
     next = _paintCurrentRow(next, rebuilt);
+    assert(next.status == GameStatus.playing);
     state = next;
   }
 
-  /// Pack give-up: reveal answer, unlock tip3, mark lost + gaveUp.
+  /// Pack give-up: reveal answer, mark lost + gaveUp.
   void giveUp() {
     if (!state.canGiveUp) return;
     _updateStreakOnLoss();
     HiveBoxes.putScoped(_packId, HiveBoxes.keyGameStatus, GameStatus.lost.name);
     HiveBoxes.putScoped(_packId, HiveBoxes.keyGaveUp, true);
-    HiveBoxes.putScoped(_packId, HiveBoxes.keyAdTipUnlock, true);
     HiveBoxes.putScoped(_packId, HiveBoxes.keySavedDayIndex, state.dayIndex);
     state = state.copyWith(
       status: GameStatus.lost,
       gaveUp: true,
-      adTipUnlocked: true,
       streak: 0,
       currentGuess: '',
       message: 'Η λέξη ήταν ${state.answer}',
@@ -336,14 +326,12 @@ class GameController extends StateNotifier<GameState> {
     HiveBoxes.putScoped(_packId, HiveBoxes.keySavedDayIndex, nextDay);
 
     final answer = words.answerForDay(nextDay);
-    final packTips = words.tipsFor(answer);
     final streak = HiveBoxes.streakFor(_packId);
 
     state = GameState.initial(
       dayIndex: nextDay,
       answer: answer,
       streak: streak,
-      packTips: packTips,
       packId: _packId,
       packLabel: _packLabel ?? state.packLabel,
     );
@@ -397,7 +385,6 @@ class GameController extends StateNotifier<GameState> {
     // Reconstruct composed row from old locks + typed, then drop newLockCol.
     final chars = List<String>.filled(GameState.wordLen, '');
     for (final c in previouslyLocked) {
-      // answer letters are applied in paint; placeholder mark
       chars[c] = '·';
     }
     var ti = 0;
@@ -416,7 +403,7 @@ class GameController extends StateNotifier<GameState> {
     return buf.toString();
   }
 
-  /// Compose full 5-letter row from rewarded lock + typed letters.
+  /// Compose full 5-letter row from rewarded locks + typed letters.
   static String? _composeGuess(GameState s, String typed) {
     if (s.answer.length != GameState.wordLen) return null;
     final locked = s.rewardedLockCols;
@@ -434,7 +421,7 @@ class GameController extends StateNotifier<GameState> {
     return chars.join();
   }
 
-  /// Paint current row: rewarded col = green correct; others from [typed].
+  /// Paint current row: rewarded cols = green correct; others from [typed].
   GameState _paintCurrentRow(GameState s, String typed) {
     final rows = s.rows.map((r) => List<Tile>.from(r)).toList();
     final row = s.currentRow;

@@ -9,11 +9,14 @@ class HiveBoxes {
   static const keyBoardRows = 'boardRows'; // persisted guesses for today
   static const keyGameStatus = 'gameStatus'; // playing | won | lost
   static const keySavedDayIndex = 'savedDayIndex';
-  static const keyManualTipReveal = 'manualTipReveal'; // tip1 free, pack puzzle
-  static const keyAdTipUnlock = 'adTipUnlock'; // tip3 rewarded stub, pack
   static const keyGaveUp = 'gaveUp'; // pack give-up for current puzzle
-  static const keyRewardedLetterUsed = 'rewardedLetterUsed'; // pack 1× letter ad
-  static const keyRewardedLetterCol = 'rewardedLetterCol'; // column 0–4
+  static const keyRewardedLetterCols = 'rewardedLetterCols'; // List<int> pack grants
+
+  // Legacy pack tip / 1× letter keys — cleared on new puzzle for migration.
+  static const keyManualTipReveal = 'manualTipReveal';
+  static const keyAdTipUnlock = 'adTipUnlock';
+  static const keyRewardedLetterUsed = 'rewardedLetterUsed';
+  static const keyRewardedLetterCol = 'rewardedLetterCol';
 
   static late Box settings;
 
