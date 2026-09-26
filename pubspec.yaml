@@ -19,6 +19,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
@@ -38,3 +39,18 @@ flutter:
     - assets/dict/packs/food/guesses.json
     - assets/dict/packs/food/etymology.json
     - assets/dict/packs/food/meta.json
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/icon-legacy-1024.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#123B29"
+  adaptive_icon_foreground: "assets/icon/icon-adaptive-foreground-1024.png"
+  adaptive_icon_foreground_inset: 0
+  adaptive_icon_monochrome: "assets/icon/icon-adaptive-monochrome-1024.png"
+  web:
+    generate: true
+    image_path: "assets/icon/icon-legacy-1024.png"
+    background_color: "#F5FBF5"
+    theme_color: "#226A4C"
