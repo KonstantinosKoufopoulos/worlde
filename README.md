@@ -66,3 +66,33 @@ Emulators are UMP test devices by default. On a physical device, run once
 and copy the hashed ID from logcat (UMP logs
 `...addTestDeviceHashedId("…")`). Consent is stored on the device; clear the
 app's data (or reinstall) to see the first-launch form again.
+
+## Release signing (Android)
+
+Release builds are signed with the **upload key** configured in
+`android/key.properties` (gitignored — **never commit it**, nor any `*.jks`):
+
+```properties
+storePassword=<password>
+keyPassword=<password>
+keyAlias=upload
+storeFile=/home/box/leximera-release/upload-keystore.jks
+```
+
+- On the build machine the upload keystore and a ready-made `key.properties`
+  live in `/home/box/leximera-release/` (outside the repo, `chmod 700`). Copy
+  that `key.properties` to `android/key.properties` before building.
+- Without `android/key.properties`, release builds fall back to the debug key,
+  so `flutter build` / `flutter run --release` still work for everyone else
+  (such builds can't be uploaded to Play).
+- Google **Play App Signing** is used: Play re-signs with the app signing key,
+  and this keystore only holds the upload key. If it is lost
+  or leaked, request an upload key reset in Play Console
+  (*Setup → App integrity*).
+
+Build the Play bundle:
+
+```bash
+flutter build appbundle --release
+# → build/app/outputs/bundle/release/app-release.aab
+```
