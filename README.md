@@ -70,7 +70,8 @@ app's data (or reinstall) to see the first-launch form again.
 ## Release signing (Android)
 
 Release builds are signed with the **upload key** configured in
-`android/key.properties` (gitignored — **never commit it**, nor any `*.jks`):
+`android/key.properties` (gitignored — **never commit it**, nor any `*.jks`).
+All four keys are required:
 
 ```properties
 storePassword=<password>
@@ -82,17 +83,33 @@ storeFile=/home/box/leximera-release/upload-keystore.jks
 - On the build machine the upload keystore and a ready-made `key.properties`
   live in `/home/box/leximera-release/` (outside the repo, `chmod 700`). Copy
   that `key.properties` to `android/key.properties` before building.
+- `storeFile` may be absolute (recommended) or relative; relative paths are
+  resolved against `android/` (the folder containing `key.properties`), e.g.
+  `storeFile=../../keys/upload.jks`.
+- A missing or empty key fails the build with e.g.
+  `android/key.properties: 'keyAlias' missing`; a `storeFile` that doesn't
+  exist fails with `android/key.properties: storeFile not found: <path>`.
 - Without `android/key.properties`, release builds fall back to the debug key,
-  so `flutter build` / `flutter run --release` still work for everyone else
-  (such builds can't be uploaded to Play).
+  so `flutter build` / `flutter run --release` still work for everyone else,
+  and Gradle prints
+  `⚠ android/key.properties not found — release is signed with the DEBUG key (not uploadable to Play)`.
+  Such builds can't be uploaded to Play. Debug/profile builds are unaffected.
 - Google **Play App Signing** is used: Play re-signs with the app signing key,
   and this keystore only holds the upload key. If it is lost
   or leaked, request an upload key reset in Play Console
   (*Setup → App integrity*).
 
-Build the Play bundle:
+Build the Play bundle — always pass `requireReleaseSigning`, so the build
+**fails** instead of silently producing a debug-signed bundle when
+`android/key.properties` is missing:
 
 ```bash
-flutter build appbundle --release
+flutter build appbundle --release --android-project-arg=requireReleaseSigning=true
+# short form: -PrequireReleaseSigning=true
+# or via Gradle's env mechanism (e.g. CI):
+#   ORG_GRADLE_PROJECT_requireReleaseSigning=true flutter build appbundle --release
 # → build/app/outputs/bundle/release/app-release.aab
 ```
+
+Without key.properties this fails with
+`Release signing required (-PrequireReleaseSigning=true) but android/key.properties not found`.
