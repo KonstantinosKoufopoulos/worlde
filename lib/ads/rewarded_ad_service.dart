@@ -34,9 +34,13 @@ abstract class RewardedAdService {
   bool get isReady;
 
   /// One-time SDK init (Android only) + first preload. Safe to call again.
+  ///
+  /// Must only be called once UMP consent allows ad requests — the
+  /// [AdsConsentController] (ads_consent_controller.dart) is the only caller.
   Future<void> init();
 
   /// Preload the next rewarded ad if none is loaded / loading.
+  /// No-op until [init] has been called.
   void load();
 
   /// Show the loaded ad. Completes after the ad closes (or fails / not ready).
@@ -49,11 +53,10 @@ abstract class RewardedAdService {
 RewardedAdService createRewardedAdService() =>
     platform.createPlatformRewardedAdService();
 
-/// App-wide service. `main.dart` overrides this with a pre-initialized
-/// instance so the first ad is preloading before a pack is opened.
+/// App-wide service. Not initialised here: the SDK is only started by
+/// `AdsConsentController` after UMP consent allows ad requests.
 final rewardedAdServiceProvider = Provider<RewardedAdService>((ref) {
   final service = createRewardedAdService();
-  service.init();
   ref.onDispose(service.dispose);
   return service;
 });

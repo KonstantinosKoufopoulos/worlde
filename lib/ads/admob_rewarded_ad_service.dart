@@ -9,7 +9,11 @@ import 'rewarded_ad_service.dart';
 /// Android rewarded ads via google_mobile_ads.
 ///
 /// Debug/profile → Google test unit; release → production unit
-/// (see [AdConfig.androidRewardedUnitId]). UMP / consent is a later ticket.
+/// (see [AdConfig.androidRewardedUnitId]).
+///
+/// Consent: nothing here runs until [init] is called, and [init] is only
+/// called by `AdsConsentController` once UMP `canRequestAds()` is true.
+/// [show] / [load] never initialise the SDK on their own.
 class AdMobRewardedAdService implements RewardedAdService {
   AdMobRewardedAdService({String? adUnitId})
       : _adUnitId = adUnitId ?? AdConfig.androidRewardedUnitId;
@@ -17,6 +21,7 @@ class AdMobRewardedAdService implements RewardedAdService {
   final String _adUnitId;
 
   Future<void>? _initFuture;
+  bool _initStarted = false;
   RewardedAd? _ad;
   bool _loading = false;
   bool _showing = false;
@@ -34,6 +39,7 @@ class AdMobRewardedAdService implements RewardedAdService {
   }
 
   Future<void> _init() async {
+    _initStarted = true;
     try {
       await MobileAds.instance.initialize();
     } catch (e) {
@@ -44,7 +50,7 @@ class AdMobRewardedAdService implements RewardedAdService {
 
   @override
   void load() {
-    if (_disposed || _loading || _ad != null) return;
+    if (!_initStarted || _disposed || _loading || _ad != null) return;
     _loading = true;
     RewardedAd.load(
       adUnitId: _adUnitId,
@@ -72,8 +78,7 @@ class AdMobRewardedAdService implements RewardedAdService {
   }) {
     final ad = _ad;
     if (ad == null || _showing) {
-      unawaited(init());
-      load();
+      load(); // No-op if consent hasn't allowed init yet.
       return Future.value(RewardedAdOutcome.notReady);
     }
 

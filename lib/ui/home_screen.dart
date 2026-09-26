@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ads/ads_consent_controller.dart';
 import '../ads/rewarded_ad_service.dart';
 import '../core/normalize.dart';
 import '../data/hive_boxes.dart';
@@ -15,6 +16,7 @@ import 'keyboard.dart';
 import 'share.dart';
 import 'theme.dart';
 import 'pack_assists.dart';
+import 'privacy_options_action.dart';
 import 'tip_card.dart';
 import 'win_confetti.dart';
 
@@ -52,6 +54,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               onPressed: () => ref.read(themeModeProvider.notifier).cycle(),
               icon: Icon(iconForThemeMode(themeMode)),
             ),
+            const PrivacyOptionsAction(),
           ],
         ),
         body: SafeArea(
@@ -483,13 +486,14 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   /// «Γράμμα με διαφήμιση»: show rewarded ad; letter only on earned reward.
   Future<void> _requestRewardedLetter() async {
     if (_rewardedAdInFlight) return;
-    final ads = ref.read(rewardedAdServiceProvider);
+    // Consent-gated: if UMP hasn't allowed ads, this is notReady (no letter,
+    // no SDK call). The consent form is never shown from here.
+    final adsConsent = ref.read(adsConsentControllerProvider);
     final ctrl = ref.read(gameControllerProvider(_scope).notifier);
     setState(() => _rewardedAdInFlight = true);
     final RewardedAdOutcome outcome;
     try {
-      outcome = await runRewardedLetterFlow(
-        ads: ads,
+      outcome = await adsConsent.runRewardedLetter(
         grant: ctrl.grantRewardedLetter,
       );
     } finally {
@@ -653,6 +657,9 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                 isPack
                     ? 'Σημερινό παζλ πακέτου: #${state.dayIndex + 1}'
                     : 'Σημερινό παζλ: #${state.dayIndex + 1}',
+              ),
+              PrivacyOptionsTile(
+                onBeforeOpen: () => Navigator.of(ctx).pop(),
               ),
             ],
           ),
