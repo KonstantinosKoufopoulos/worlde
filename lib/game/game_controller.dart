@@ -265,7 +265,8 @@ class GameController extends StateNotifier<GameState> {
     }
   }
 
-  /// Pack rewarded letter: web stub grants instantly (no real ads yet).
+  /// Pack rewarded letter. Call only after the rewarded ad reports the reward
+  /// (Android: AdMob onUserEarnedReward; web/desktop stub: instantly).
   /// Fills one random non-green column with the correct letter on the current
   /// row (green). Does not consume a guess row and never auto-wins — even when
   /// filling the last empty slot.

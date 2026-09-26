@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../ads/rewarded_ad_service.dart';
 import '../core/normalize.dart';
 import '../data/hive_boxes.dart';
 import '../data/pack_meta.dart';
@@ -226,6 +227,7 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
   bool _shareVisible = false;
   Timer? _shareDelayTimer;
   bool _handledInitialFinish = false;
+  bool _rewardedAdInFlight = false;
 
   static const _shareAfterTipDelay = Duration(milliseconds: 400);
 
@@ -428,10 +430,10 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                         if (showPackAssists)
                           PackAssistsPanel(
                             rewardedLetterCount: state.rewardedLetterCount,
-                            canGrantRewardedLetter: state.canGrantRewardedLetter,
-                            onGrantRewardedLetter: () => ref
-                                .read(gameControllerProvider(_scope).notifier)
-                                .grantRewardedLetter(),
+                            canGrantRewardedLetter:
+                                state.canGrantRewardedLetter &&
+                                    !_rewardedAdInFlight,
+                            onGrantRewardedLetter: _requestRewardedLetter,
                             canGiveUp: state.canGiveUp,
                             onGiveUp: () => _confirmGiveUp(context),
                           ),
@@ -475,6 +477,37 @@ class _PlayScreenState extends ConsumerState<PlayScreen> {
                 ],
               ),
       ),
+    );
+  }
+
+  /// «Γράμμα με διαφήμιση»: show rewarded ad; letter only on earned reward.
+  Future<void> _requestRewardedLetter() async {
+    if (_rewardedAdInFlight) return;
+    final ads = ref.read(rewardedAdServiceProvider);
+    final ctrl = ref.read(gameControllerProvider(_scope).notifier);
+    setState(() => _rewardedAdInFlight = true);
+    final RewardedAdOutcome outcome;
+    try {
+      outcome = await runRewardedLetterFlow(
+        ads: ads,
+        grant: ctrl.grantRewardedLetter,
+      );
+    } finally {
+      if (mounted) setState(() => _rewardedAdInFlight = false);
+    }
+    if (!mounted) return;
+    final String? note = switch (outcome) {
+      RewardedAdOutcome.rewarded => null,
+      RewardedAdOutcome.dismissedWithoutReward =>
+        'Δες όλη τη διαφήμιση για να πάρεις γράμμα',
+      RewardedAdOutcome.notReady =>
+        'Η διαφήμιση φορτώνει — δοκίμασε ξανά σε λίγο',
+      RewardedAdOutcome.failedToShow =>
+        'Η διαφήμιση δεν εμφανίστηκε — δοκίμασε ξανά',
+    };
+    if (note == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(note), duration: const Duration(seconds: 2)),
     );
   }
 
