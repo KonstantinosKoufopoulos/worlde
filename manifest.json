@@ -1,13 +1,14 @@
 {
-    "name": "leximera",
-    "short_name": "leximera",
+    "name": "Λεξήμερα",
+    "short_name": "Λεξήμερα",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F5FBF5",
+    "theme_color": "#226A4C",
+    "description": "Λεξήμερα — το καθημερινό ελληνικό παιχνίδι λέξεων. Μάντεψε την πεντάγραμμη λέξη της ημέρας σε έξι προσπάθειες.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
+    "lang": "el",
     "icons": [
         {
             "src": "icons/Icon-192.png",
